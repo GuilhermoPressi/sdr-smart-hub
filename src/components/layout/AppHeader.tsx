@@ -1,0 +1,70 @@
+import { useLocation } from "react-router-dom";
+import { useApp } from "@/store/app";
+import { Bell, ShieldCheck } from "lucide-react";
+
+const titles: Record<string, { title: string; subtitle: string }> = {
+  "/configurar-ia": { title: "Configurar IA de Atendimento", subtitle: "Crie sua IA SDR em poucos minutos. Sem prompts complicados." },
+  "/whatsapp": { title: "Conectar seu WhatsApp", subtitle: "Conecte um ou os dois canais. Nada é ativado nesta versão." },
+  "/criar-lista": { title: "Criar Lista de Leads", subtitle: "Encontre leads qualificados em minutos." },
+  "/contatos": { title: "Contatos", subtitle: "Organize, marque e envie para o CRM." },
+  "/crm": { title: "CRM", subtitle: "Acompanhe cada lead até a proposta." },
+};
+
+export function AppHeader() {
+  const { pathname } = useLocation();
+  const meta = titles[pathname] || { title: "LeadFlow", subtitle: "Plataforma SDR" };
+  const { connections, ai } = useApp();
+
+  return (
+    <header className="sticky top-0 z-30 border-b border-border-subtle bg-background/70 backdrop-blur-xl">
+      <div className="flex items-center gap-4 px-6 lg:px-10 py-4">
+        <div className="min-w-0 flex-1">
+          <h1 className="font-display text-xl md:text-2xl font-semibold text-foreground truncate">
+            {meta.title}
+          </h1>
+          <p className="text-sm text-muted-foreground truncate">{meta.subtitle}</p>
+        </div>
+
+        <div className="hidden lg:flex items-center gap-2">
+          <StatusChip
+            label="API Oficial"
+            ok={connections.official !== "disconnected"}
+            okLabel={connections.official === "pending" ? "Pendente" : "Conectado"}
+          />
+          <StatusChip
+            label="Evolution"
+            ok={connections.evolution !== "disconnected"}
+            okLabel={connections.evolution === "pending" ? "Pendente" : "Conectado"}
+          />
+          <StatusChip label="IA SDR" ok={ai.built} okLabel="Ativa" />
+        </div>
+
+        <button className="h-10 w-10 grid place-items-center rounded-xl border border-border-subtle bg-surface/60 text-muted-foreground hover:text-foreground transition-colors">
+          <Bell className="h-4 w-4" />
+        </button>
+
+        <div className="flex items-center gap-3 rounded-xl border border-border-subtle bg-surface/60 pl-3 pr-2 py-1.5">
+          <div className="hidden sm:block text-right leading-tight">
+            <p className="text-xs font-medium text-foreground">Você</p>
+            <p className="text-[10px] text-muted-foreground flex items-center gap-1 justify-end">
+              <ShieldCheck className="h-3 w-3" /> Admin
+            </p>
+          </div>
+          <div className="h-8 w-8 rounded-lg bg-gradient-accent grid place-items-center text-xs font-semibold text-background">
+            VC
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function StatusChip({ label, ok, okLabel }: { label: string; ok: boolean; okLabel: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-full border border-border-subtle bg-surface/60 px-3 py-1.5 text-xs">
+      <span className={`h-1.5 w-1.5 rounded-full ${ok ? "bg-primary animate-pulse-glow" : "bg-muted-foreground/40"}`} />
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-foreground/80 font-medium">{ok ? okLabel : "Não conectado"}</span>
+    </div>
+  );
+}
