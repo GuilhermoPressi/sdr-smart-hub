@@ -15,7 +15,7 @@ import { ApifyLeadSearch } from './apify-leads/entities/apify-lead-search.entity
       database: process.env.DB_NAME || 'sdr_smart_hub',
       entities: [Contact, ApifyLeadSearch],
       synchronize: process.env.NODE_ENV !== 'production',
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      ssl: false,
     }),
     ApifyLeadsModule,
   ],
