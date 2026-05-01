@@ -8,7 +8,7 @@ import axios from 'axios';
 import { LeadSource } from './dto/search-leads.dto';
 
 const ACTOR_MAP: Record<LeadSource, string> = {
-  [LeadSource.GOOGLE]: 'apify/google-places-scraper',
+  [LeadSource.GOOGLE]: 'compass/crawler-google-places',
   [LeadSource.INSTAGRAM]: 'apify/instagram-scraper',
   [LeadSource.LINKEDIN]: 'curious_coder/linkedin-company-search-export',
   [LeadSource.WEBSITE]: 'apify/website-content-crawler',
