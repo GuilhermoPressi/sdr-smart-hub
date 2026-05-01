@@ -61,6 +61,15 @@ export class ApifyLeadsService {
         duplicatesIgnored: leads.length - totalImported,
         executionTimeSeconds: parseFloat(totalElapsed),
         status: SearchStatus.COMPLETED,
+        leads: leads.map((l) => ({
+          name: l.name,
+          companyName: l.companyName,
+          phone: l.phone,
+          email: l.email,
+          website: l.website,
+          address: (l as any).address,
+          profileUrl: l.profileUrl,
+        })),
       };
     } catch (err) {
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -103,6 +112,7 @@ export class ApifyLeadsService {
         phone: lead.phone || null,
         profileUrl: lead.profileUrl || null,
         website: lead.website || null,
+        address: (lead as any).address || null,
         source: 'apify',
         userId,
         companyId,

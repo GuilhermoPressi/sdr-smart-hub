@@ -6,6 +6,16 @@ export interface SearchLeadsPayload {
   limit: number;
 }
 
+export interface LeadResult {
+  name: string;
+  companyName: string;
+  phone: string;
+  email: string;
+  website: string;
+  address: string;
+  profileUrl: string;
+}
+
 export interface SearchLeadsResponse {
   searchId: string;
   source: string;
@@ -15,6 +25,7 @@ export interface SearchLeadsResponse {
   duplicatesIgnored: number;
   executionTimeSeconds: number;
   status: string;
+  leads?: LeadResult[];
 }
 
 export interface ApifyLeadSearch {

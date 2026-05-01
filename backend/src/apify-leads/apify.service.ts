@@ -21,6 +21,7 @@ export interface NormalizedLead {
   phone: string;
   profileUrl: string;
   website: string;
+  address: string;
   source: string;
   rawData: Record<string, any>;
 }
@@ -43,7 +44,7 @@ export class ApifyService {
 
   async runActor(actorId: string, input: Record<string, any>) {
     const client = this.getClient();
-    const urlActorId = actorId.replace("/", "~");
+    const urlActorId = actorId.replace('/', '~');
     this.logger.log(`▶ Iniciando actor: ${actorId} (URL: ${urlActorId})`);
     this.logger.log(`  Input: ${JSON.stringify(input)}`);
 
@@ -104,6 +105,9 @@ export class ApifyService {
       });
       const items = Array.isArray(res.data) ? res.data : [];
       this.logger.log(`  ✅ ${items.length} itens no dataset`);
+      if (items.length > 0) {
+        this.logger.log(`  CAMPOS DO ITEM[0]: ${Object.keys(items[0]).join(', ')}`);
+      }
       return items;
     } catch (err) {
       const msg = err?.response?.data?.error?.message || err.message;
@@ -153,9 +157,10 @@ export class ApifyService {
           name: item.title || item.name || '',
           companyName: item.title || item.name || '',
           email: item.email || this.extractEmail(item.description) || '',
-          phone: item.phone || item.phoneUnformatted || '',
-          profileUrl: item.url || '',
-          website: item.website || '',
+          phone: item.phone || item.phoneUnformatted || item.phoneNumber || '',
+          profileUrl: item.url || item.placeUrl || '',
+          website: item.website || item.webUrl || '',
+          address: item.address || item.street || '',
           source,
           rawData: item,
         };
@@ -167,6 +172,7 @@ export class ApifyService {
           phone: '',
           profileUrl: item.url || `https://instagram.com/${item.username || ''}`,
           website: item.externalUrl || '',
+          address: '',
           source,
           rawData: item,
         };
@@ -178,6 +184,7 @@ export class ApifyService {
           phone: item.phone || '',
           profileUrl: item.linkedinUrl || item.url || '',
           website: item.website || '',
+          address: item.location || '',
           source,
           rawData: item,
         };
@@ -189,11 +196,12 @@ export class ApifyService {
           phone: this.extractPhone(item.text) || '',
           profileUrl: item.url || '',
           website: item.url || '',
+          address: '',
           source,
           rawData: item,
         };
       default:
-        return { name: item.name || '', companyName: '', email: item.email || '', phone: item.phone || '', profileUrl: item.url || '', website: '', source, rawData: item };
+        return { name: item.name || '', companyName: '', email: item.email || '', phone: item.phone || '', profileUrl: item.url || '', website: '', address: '', source, rawData: item };
     }
   }
 

@@ -33,6 +33,9 @@ export class Contact {
   @Column({ nullable: true })
   website: string;
 
+  @Column({ nullable: true })
+  address: string;
+
   @Column({ default: 'manual' })
   source: string;
 

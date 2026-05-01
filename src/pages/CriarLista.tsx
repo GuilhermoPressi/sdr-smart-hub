@@ -44,6 +44,7 @@ export default function CriarLista() {
   const [limit, setLimit] = useState(25);
   const [state, setState] = useState<SearchState>("idle");
   const [result, setResult] = useState<SearchLeadsResponse | null>(null);
+  const [foundLeads, setFoundLeads] = useState<LeadResult[]>([]);
   const [error, setError] = useState("");
   const [history, setHistory] = useState<ApifyLeadSearch[]>([]);
   const [showHistory, setShowHistory] = useState(false);
