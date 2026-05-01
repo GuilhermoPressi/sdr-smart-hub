@@ -127,8 +127,6 @@ export class ApifyService {
         return {
           searchStringsArray: [query],
           maxCrawledPlacesPerSearch: limit,
-          language: 'pt-BR',
-          countryCode: 'br',
         };
       case LeadSource.INSTAGRAM:
         return { search: query, searchType: 'hashtag', resultsLimit: limit };
