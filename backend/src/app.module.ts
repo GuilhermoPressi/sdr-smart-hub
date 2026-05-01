@@ -14,7 +14,7 @@ import { ApifyLeadSearch } from './apify-leads/entities/apify-lead-search.entity
       password: process.env.DB_PASS || 'postgres',
       database: process.env.DB_NAME || 'sdr_smart_hub',
       entities: [Contact, ApifyLeadSearch],
-      synchronize: process.env.NODE_ENV !== 'production',
+      synchronize: true,
       ssl: false,
     }),
     ApifyLeadsModule,
