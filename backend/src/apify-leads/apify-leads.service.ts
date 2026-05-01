@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Or } from 'typeorm';
+import { Repository } from 'typeorm';
 import { ApifyLeadSearch, SearchStatus } from './entities/apify-lead-search.entity';
 import { Contact } from '../contacts/entities/contact.entity';
 import { ApifyService, NormalizedLead } from './apify.service';
@@ -22,24 +22,33 @@ export class ApifyLeadsService {
     const { source, query, limit } = dto;
     const userId = user?.sub || user?.id || null;
     const companyId = user?.companyId || null;
+    const startTime = Date.now();
 
-    // Registra a busca
-    const record = this.searchRepo.create({
-      userId,
-      companyId,
-      source,
-      query,
-      status: SearchStatus.RUNNING,
-    });
+    this.logger.log(`=== BUSCA INICIADA ===`);
+    this.logger.log(`Source: ${source} | Query: "${query}" | Limit: ${limit} | User: ${userId}`);
+
+    // Registra a busca com status RUNNING
+    const record = this.searchRepo.create({ userId, companyId, source, query, status: SearchStatus.RUNNING });
     await this.searchRepo.save(record);
 
     try {
+      // Executa o Actor na Apify e aguarda resultado
       const { runId, leads } = await this.apifyService.runAndWait(source, query, limit);
+
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      this.logger.log(`Actor finalizado em ${elapsed}s | ${leads.length} leads encontrados`);
+
       record.apifyRunId = runId;
       record.totalFound = leads.length;
 
-      const imported = await this.importLeads(leads, userId, companyId);
-      record.totalImported = imported;
+      // Importa para o CRM com deduplicação
+      const totalImported = await this.importLeads(leads, userId, companyId);
+
+      const totalElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      this.logger.log(`=== BUSCA CONCLUÍDA em ${totalElapsed}s ===`);
+      this.logger.log(`  Encontrados: ${leads.length} | Importados: ${totalImported} | Duplicados ignorados: ${leads.length - totalImported}`);
+
+      record.totalImported = totalImported;
       record.status = SearchStatus.COMPLETED;
       await this.searchRepo.save(record);
 
@@ -48,10 +57,15 @@ export class ApifyLeadsService {
         source,
         query,
         totalFound: leads.length,
-        totalImported: imported,
+        totalImported,
+        duplicatesIgnored: leads.length - totalImported,
+        executionTimeSeconds: parseFloat(totalElapsed),
         status: SearchStatus.COMPLETED,
       };
     } catch (err) {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      this.logger.error(`=== BUSCA FALHOU em ${elapsed}s: ${err.message} ===`);
+
       record.status = SearchStatus.FAILED;
       record.error = err.message;
       await this.searchRepo.save(record);
@@ -63,26 +77,28 @@ export class ApifyLeadsService {
     let count = 0;
 
     for (const lead of leads) {
-      // Filtra leads sem nenhum identificador
-      if (!lead.email && !lead.phone && !lead.profileUrl) continue;
+      // Descarta leads sem nenhum identificador único
+      if (!lead.email && !lead.phone && !lead.profileUrl) {
+        this.logger.debug(`Lead sem identificador ignorado: ${lead.name}`);
+        continue;
+      }
 
-      // Verifica duplicados
-      const existing = await this.contactRepo.findOne({
-        where: [
-          lead.email ? { email: lead.email } : null,
-          lead.phone ? { phone: lead.phone } : null,
-          lead.profileUrl ? { profileUrl: lead.profileUrl } : null,
-        ].filter(Boolean) as any,
-      });
+      // Verifica duplicados por email, phone ou profileUrl
+      const conditions: any[] = [];
+      if (lead.email) conditions.push({ email: lead.email });
+      if (lead.phone) conditions.push({ phone: lead.phone });
+      if (lead.profileUrl) conditions.push({ profileUrl: lead.profileUrl });
+
+      const existing = await this.contactRepo.findOne({ where: conditions });
 
       if (existing) {
-        this.logger.debug(`Lead duplicado ignorado: ${lead.email || lead.phone || lead.profileUrl}`);
+        this.logger.debug(`Duplicado ignorado: ${lead.email || lead.phone || lead.profileUrl}`);
         continue;
       }
 
       const contact = this.contactRepo.create({
-        name: lead.name,
-        companyName: lead.companyName,
+        name: lead.name || null,
+        companyName: lead.companyName || null,
         email: lead.email || null,
         phone: lead.phone || null,
         profileUrl: lead.profileUrl || null,
@@ -92,6 +108,7 @@ export class ApifyLeadsService {
         companyId,
         metadata: {
           apifySource: lead.source,
+          importedAt: new Date().toISOString(),
           rawData: lead.rawData,
         },
       });
@@ -100,7 +117,6 @@ export class ApifyLeadsService {
       count++;
     }
 
-    this.logger.log(`${count} contatos importados de ${leads.length} leads`);
     return count;
   }
 
@@ -116,7 +132,7 @@ export class ApifyLeadsService {
   async getSearchById(id: string, user: any) {
     const userId = user?.sub || user?.id || null;
     const record = await this.searchRepo.findOne({ where: { id, userId } });
-    if (!record) return null;
+    if (!record) throw new NotFoundException('Busca não encontrada');
     return record;
   }
 }
