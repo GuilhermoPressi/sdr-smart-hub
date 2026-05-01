@@ -4,7 +4,7 @@ import {
   Logger,
   BadRequestException,
 } from '@nestjs/common';
-import axios, { AxiosInstance } from 'axios';
+import axios from 'axios';
 import { LeadSource } from './dto/search-leads.dto';
 
 const ACTOR_MAP: Record<LeadSource, string> = {
@@ -25,91 +25,94 @@ export interface NormalizedLead {
   rawData: Record<string, any>;
 }
 
-export interface ApifyRunResult {
-  runId: string;
-  datasetId: string;
-  status: string;
-  itemCount: number;
-}
-
 @Injectable()
 export class ApifyService {
   private readonly logger = new Logger(ApifyService.name);
-  private readonly client: AxiosInstance;
-  private readonly token: string;
 
-  constructor() {
-    this.token = process.env.APIFY_API_TOKEN;
-    if (!this.token || this.token === 'seu_token_apify_aqui') {
-      this.logger.warn('APIFY_API_TOKEN nao configurado');
+  private getClient() {
+    const token = process.env.APIFY_API_TOKEN;
+    if (!token || token === 'seu_token_apify_aqui') {
+      throw new BadRequestException('APIFY_API_TOKEN não configurado nas variáveis de ambiente.');
     }
-    this.client = axios.create({
+    return axios.create({
       baseURL: 'https://api.apify.com/v2',
-      headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       timeout: 180000,
     });
   }
 
-  async runActor(actorId: string, input: Record<string, any>): Promise<ApifyRunResult> {
-    if (!this.token || this.token === 'seu_token_apify_aqui') {
-      throw new BadRequestException('APIFY_API_TOKEN nao configurado.');
-    }
-    this.logger.log(`Iniciando actor: ${actorId}`);
+  async runActor(actorId: string, input: Record<string, any>) {
+    const client = this.getClient();
+    this.logger.log(`▶ Iniciando actor: ${actorId}`);
+    this.logger.log(`  Input: ${JSON.stringify(input)}`);
+
     try {
-      const res = await this.client.post(`/acts/${actorId}/runs`, input, { params: { waitForFinish: 120 } });
+      const res = await client.post(`/acts/${actorId}/runs`, input, {
+        params: { waitForFinish: 120 },
+      });
       const run = res.data?.data;
-      const status = run?.status;
-      this.logger.log(`Run: ${run?.id} | Status: ${status}`);
-      if (status === 'RUNNING' || status === 'READY') {
-        return this.pollRunUntilFinished(run?.id, run?.defaultDatasetId);
+      this.logger.log(`  Run: ${run?.id} | Status: ${run?.status} | Dataset: ${run?.defaultDatasetId}`);
+
+      if (run?.status === 'RUNNING' || run?.status === 'READY') {
+        return this.pollRunUntilFinished(run.id, run.defaultDatasetId);
       }
-      if (status === 'FAILED' || status === 'ABORTED' || status === 'TIMED-OUT') {
-        throw new InternalServerErrorException(`Actor falhou: ${status}`);
+      if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(run?.status)) {
+        throw new InternalServerErrorException(`Actor Apify falhou com status: ${run?.status}`);
       }
-      return { runId: run?.id, datasetId: run?.defaultDatasetId, status, itemCount: run?.stats?.itemCount || 0 };
+      return { runId: run?.id, datasetId: run?.defaultDatasetId, status: run?.status };
     } catch (err) {
       if (err instanceof BadRequestException || err instanceof InternalServerErrorException) throw err;
-      const msg = err?.response?.data?.error?.message || err.message;
-      const status = err?.response?.status;
-      if (status === 401) throw new BadRequestException('Token Apify invalido.');
-      if (status === 404) throw new BadRequestException(`Actor "${actorId}" nao encontrado.`);
-      throw new InternalServerErrorException(`Erro Apify: ${msg}`);
+      const apifyMsg = err?.response?.data?.error?.message || err?.response?.data?.message;
+      const httpStatus = err?.response?.status;
+      this.logger.error(`Erro Apify [${httpStatus}]: ${apifyMsg || err.message}`);
+      if (httpStatus === 401) throw new BadRequestException('Token Apify inválido ou sem permissão.');
+      if (httpStatus === 404) throw new BadRequestException(`Actor "${actorId}" não encontrado na Apify Store.`);
+      if (httpStatus === 429) throw new BadRequestException('Limite de requisições Apify atingido. Aguarde e tente novamente.');
+      throw new InternalServerErrorException(`Erro ao chamar Apify: ${apifyMsg || err.message}`);
     }
   }
 
-  private async pollRunUntilFinished(runId: string, datasetId: string): Promise<ApifyRunResult> {
+  private async pollRunUntilFinished(runId: string, datasetId: string) {
+    const client = this.getClient();
     for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, 10000));
-      const res = await this.client.get(`/actor-runs/${runId}`);
-      const run = res.data?.data;
-      const status = run?.status;
-      this.logger.log(`Polling ${runId}: ${status} (${i + 1}/30)`);
-      if (status === 'SUCCEEDED') {
-        return { runId, datasetId: run?.defaultDatasetId || datasetId, status, itemCount: run?.stats?.itemCount || 0 };
-      }
-      if (status === 'FAILED' || status === 'ABORTED' || status === 'TIMED-OUT') {
-        throw new InternalServerErrorException(`Actor falhou no polling: ${status}`);
+      try {
+        const res = await client.get(`/actor-runs/${runId}`);
+        const run = res.data?.data;
+        this.logger.log(`  Polling ${runId}: ${run?.status} (${i + 1}/30)`);
+        if (run?.status === 'SUCCEEDED') {
+          return { runId, datasetId: run?.defaultDatasetId || datasetId, status: run?.status };
+        }
+        if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(run?.status)) {
+          throw new InternalServerErrorException(`Actor falhou durante execução: ${run?.status}`);
+        }
+      } catch (err) {
+        if (err instanceof InternalServerErrorException) throw err;
+        this.logger.warn(`Erro no polling (tentativa ${i + 1}): ${err.message}`);
       }
     }
     throw new InternalServerErrorException('Timeout: actor demorou mais de 5 minutos.');
   }
 
-  async getDatasetItems(datasetId: string, limit = 100): Promise<any[]> {
-    this.logger.log(`Buscando dataset: ${datasetId}`);
+  async getDatasetItems(datasetId: string, limit: number): Promise<any[]> {
+    const client = this.getClient();
+    this.logger.log(`📦 Buscando dataset: ${datasetId} (limit: ${limit})`);
     try {
-      const res = await this.client.get(`/datasets/${datasetId}/items`, { params: { limit, clean: true, format: 'json' } });
-      const items = res.data || [];
-      this.logger.log(`${items.length} itens no dataset`);
+      const res = await client.get(`/datasets/${datasetId}/items`, {
+        params: { limit, clean: true, format: 'json' },
+      });
+      const items = Array.isArray(res.data) ? res.data : [];
+      this.logger.log(`  ✅ ${items.length} itens no dataset`);
       return items;
     } catch (err) {
       const msg = err?.response?.data?.error?.message || err.message;
-      throw new InternalServerErrorException(`Erro ao buscar dataset: ${msg}`);
+      throw new InternalServerErrorException(`Erro ao buscar dataset Apify: ${msg}`);
     }
   }
 
-  async runAndWait(source: LeadSource, query: string, limit: number): Promise<{ runId: string; leads: NormalizedLead[] }> {
+  async runAndWait(source: LeadSource, query: string, limit: number) {
     const actorId = ACTOR_MAP[source];
-    if (!actorId) throw new BadRequestException(`Source "${source}" sem actor configurado.`);
+    if (!actorId) throw new BadRequestException(`Source "${source}" não tem actor configurado.`);
     const input = this.buildInput(source, query, limit);
     const { runId, datasetId } = await this.runActor(actorId, input);
     const items = await this.getDatasetItems(datasetId, limit);
@@ -117,16 +120,31 @@ export class ApifyService {
     return { runId, leads };
   }
 
-  private buildInput(source: LeadSource, query: string, limit: number): Record<string, any> {
+  private buildInput(source: LeadSource, query: string, limit: number) {
     switch (source) {
       case LeadSource.GOOGLE:
-        return { searchStringsArray: [query], maxCrawledPlacesPerSearch: limit, maxCrawledPlaces: limit, language: 'pt', countryCode: 'br', includeWebResults: false, scrapeDirectories: false };
+        return {
+          searchStringsArray: [query],
+          maxCrawledPlacesPerSearch: limit,
+          maxCrawledPlaces: limit,
+          language: 'pt',
+          countryCode: 'br',
+          includeWebResults: false,
+          scrapeDirectories: false,
+        };
       case LeadSource.INSTAGRAM:
         return { search: query, searchType: 'hashtag', resultsLimit: limit };
       case LeadSource.LINKEDIN:
-        return { searchUrl: `https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(query)}`, maxResults: limit };
+        return {
+          searchUrl: `https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(query)}`,
+          maxResults: limit,
+        };
       case LeadSource.WEBSITE:
-        return { startUrls: [{ url: `https://www.google.com/search?q=${encodeURIComponent(query)}` }], maxCrawlPages: limit, maxCrawlDepth: 2 };
+        return {
+          startUrls: [{ url: `https://www.google.com/search?q=${encodeURIComponent(query)}` }],
+          maxCrawlPages: limit,
+          maxCrawlDepth: 2,
+        };
       default:
         return { query, limit };
     }

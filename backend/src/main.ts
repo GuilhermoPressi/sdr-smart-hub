@@ -1,11 +1,14 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/all-exceptions.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api/v1');
+
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -16,7 +19,7 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    origin: true, // aceita qualquer origem (simplifica para MVP)
+    origin: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
     credentials: true,
@@ -25,5 +28,6 @@ async function bootstrap() {
   const port = process.env.PORT || 3001;
   await app.listen(port);
   console.log(`🚀 Backend rodando em http://localhost:${port}/api/v1`);
+  console.log(`   APIFY_API_TOKEN: ${process.env.APIFY_API_TOKEN ? '✅ configurado' : '❌ NÃO configurado'}`);
 }
 bootstrap();
