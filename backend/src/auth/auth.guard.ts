@@ -13,10 +13,20 @@ export class JwtAuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
-    const token = this.extractToken(request);
 
+    // Aceita x-api-key como alternativa ao JWT (para integração frontend sem login)
+    const apiKey = request.headers['x-api-key'] as string;
+    const internalKey = process.env.INTERNAL_API_KEY;
+
+    if (internalKey && apiKey === internalKey) {
+      request['user'] = { sub: 'internal', id: 'internal', companyId: null };
+      return true;
+    }
+
+    // Fallback para JWT
+    const token = this.extractToken(request);
     if (!token) {
-      throw new UnauthorizedException('Token não fornecido');
+      throw new UnauthorizedException('Token ou API key não fornecidos.');
     }
 
     try {
@@ -25,7 +35,7 @@ export class JwtAuthGuard implements CanActivate {
       });
       request['user'] = payload;
     } catch {
-      throw new UnauthorizedException('Token inválido ou expirado');
+      throw new UnauthorizedException('Token inválido ou expirado.');
     }
 
     return true;

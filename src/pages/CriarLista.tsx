@@ -4,248 +4,373 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { LoadingModal } from "@/components/shared/LoadingModal";
-import { Linkedin, MapPin, Search, Trash2, UserPlus, Sparkles, Building2, Briefcase } from "lucide-react";
+import { api, SearchLeadsResponse, ApifyLeadSearch } from "@/lib/api";
+import {
+  Linkedin, MapPin, Search, Trash2, UserPlus, Sparkles,
+  Building2, Globe, Instagram, Clock, CheckCircle2,
+  XCircle, Loader2, ChevronRight, Info, History,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-const searchPhrases = [
-  "Iniciando busca no LinkedIn...",
-  "Analisando perfis...",
-  "Coletando informações públicas...",
-  "Organizando contatos encontrados...",
-  "Preparando sua lista...",
+type Source = "google" | "linkedin" | "instagram" | "website";
+type SearchState = "idle" | "loading" | "done" | "error";
+
+const SOURCES: { id: Source; label: string; icon: any; description: string; badge: string; badgeVariant: "success" | "warning" | "info" }[] = [
+  { id: "google", label: "Google Maps", icon: MapPin, description: "Empresas locais por região e segmento. Melhor para negócios físicos.", badge: "Recomendado", badgeVariant: "success" },
+  { id: "linkedin", label: "LinkedIn", icon: Linkedin, description: "Perfis profissionais por cargo, empresa e localização.", badge: "Disponível", badgeVariant: "info" },
+  { id: "instagram", label: "Instagram", icon: Instagram, description: "Perfis públicos por hashtag ou segmento.", badge: "Disponível", badgeVariant: "info" },
+  { id: "website", label: "Web Crawler", icon: Globe, description: "Extrai contatos de sites a partir de uma busca.", badge: "Avançado", badgeVariant: "warning" },
 ];
 
-const createPhrases = [
-  "Criando contatos...",
-  "Validando formato dos números...",
-  "Organizando informações...",
-  "Contatos criados com sucesso.",
-];
+const LIMITS = [10, 25, 50, 100];
 
-const mockLeads: Lead[] = [
-  { id: "n1", name: "Mariana Costa", role: "Dentista", company: "Clínica Costa", phone: "+55 11 98765-4321", email: "mariana@email.com", linkedin: "/in/marianacosta", origin: "LinkedIn", tags: [], crm: "Pipeline Comercial", stage: "novo", status: "Novo", iaStatus: "Aguardando", temperature: "Morno", lastInteraction: "—" },
-  { id: "n2", name: "Rafael Lima", role: "Diretor", company: "Odonto Prime", phone: "+55 11 91234-5678", email: "rafael@email.com", linkedin: "/in/rafaellima", origin: "LinkedIn", tags: [], crm: "Pipeline Comercial", stage: "novo", status: "Novo", iaStatus: "Aguardando", temperature: "Frio", lastInteraction: "—" },
-  { id: "n3", name: "Camila Rocha", role: "Sócia", company: "Clínica Rocha", phone: "+55 11 99888-1122", email: "camila@email.com", linkedin: "/in/camilarocha", origin: "LinkedIn", tags: [], crm: "Pipeline Comercial", stage: "novo", status: "Novo", iaStatus: "Aguardando", temperature: "Morno", lastInteraction: "—" },
-];
+const SOURCE_EXAMPLES: Record<Source, { query: string; placeholder: string }> = {
+  google: { query: "clínicas estéticas em Porto Alegre", placeholder: "Ex: dentistas em São Paulo, academias no Rio" },
+  linkedin: { query: "CEO odontologia Porto Alegre", placeholder: "Ex: diretor comercial saúde São Paulo" },
+  instagram: { query: "clínica_estetica", placeholder: "Ex: odontologia, esteticista, clinica_sp" },
+  website: { query: "clínicas estéticas Porto Alegre RS", placeholder: "Ex: consultórios dentários Florianópolis" },
+};
 
-const quantities = [50, 100, 250, 500];
+function formatTime(seconds: number) {
+  if (seconds < 60) return `${seconds.toFixed(0)}s`;
+  return `${(seconds / 60).toFixed(1)}min`;
+}
 
 export default function CriarLista() {
   const { addLeads } = useApp();
-  const [source, setSource] = useState<"linkedin" | "maps">("linkedin");
-  const [qty, setQty] = useState(100);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [createLoading, setCreateLoading] = useState(false);
-  const [results, setResults] = useState<Lead[] | null>(null);
+  const [source, setSource] = useState<Source>("google");
+  const [query, setQuery] = useState("");
+  const [limit, setLimit] = useState(25);
+  const [state, setState] = useState<SearchState>("idle");
+  const [result, setResult] = useState<SearchLeadsResponse | null>(null);
+  const [error, setError] = useState("");
+  const [history, setHistory] = useState<ApifyLeadSearch[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  const example = SOURCE_EXAMPLES[source];
+
+  async function handleSearch() {
+    if (!query.trim()) {
+      toast.error("Preencha o que você quer buscar");
+      return;
+    }
+
+    setState("loading");
+    setError("");
+    setResult(null);
+
+    try {
+      const res = await api.searchLeads({ source, query: query.trim(), limit });
+      setResult(res);
+      setState("done");
+
+      if (res.totalImported > 0) {
+        toast.success(`${res.totalImported} leads importados`, {
+          description: `${res.duplicatesIgnored} duplicados ignorados · ${formatTime(res.executionTimeSeconds)}`,
+        });
+        // Adiciona leads fictícios ao store local para refletir na UI
+        const fakeLeads: Lead[] = Array.from({ length: res.totalImported }, (_, i) => ({
+          id: `apify-${res.searchId}-${i}`,
+          name: `Lead importado ${i + 1}`,
+          company: "",
+          role: "",
+          phone: "",
+          email: "",
+          origin: source,
+          tags: [`apify-${source}`],
+          crm: "Pipeline Comercial",
+          stage: "novo",
+          status: "Novo",
+          iaStatus: "Aguardando",
+          temperature: "Morno",
+          lastInteraction: "Agora",
+        }));
+        addLeads(fakeLeads);
+      } else {
+        toast.warning("Nenhum lead novo encontrado", {
+          description: res.totalFound > 0 ? `${res.totalFound} encontrados, todos já existem no CRM` : "Tente um termo de busca diferente",
+        });
+      }
+    } catch (err: any) {
+      setState("error");
+      setError(err.message || "Erro inesperado. Tente novamente.");
+      toast.error("Busca falhou", { description: err.message });
+    }
+  }
+
+  async function handleLoadHistory() {
+    setLoadingHistory(true);
+    try {
+      const h = await api.getSearchHistory();
+      setHistory(h);
+      setShowHistory(true);
+    } catch {
+      toast.error("Não foi possível carregar o histórico");
+    } finally {
+      setLoadingHistory(false);
+    }
+  }
 
   return (
-    <>
-      <div className="space-y-6">
+    <div className="space-y-6 max-w-5xl">
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">1. Escolha a fonte de busca</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <SourceCard
-              active={source === "linkedin"}
-              onClick={() => setSource("linkedin")}
-              icon={Linkedin}
-              title="LinkedIn"
-              description="Buscar leads profissionais por cargo, segmento e localização."
-              badge={<StatusBadge variant="success" dot>Disponível</StatusBadge>}
-            />
-            <SourceCard
-              active={false}
-              disabled
-              onClick={() => {}}
-              icon={MapPin}
-              title="Google Maps"
-              description="Buscar empresas locais por região e categoria."
-              badge={<StatusBadge variant="warning" dot>Em breve</StatusBadge>}
-            />
-          </div>
+          <h2 className="font-display font-semibold text-lg">Criar Lista de Leads</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Encontre leads qualificados em minutos via Apify.</p>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="border-border-subtle text-xs gap-2"
+          onClick={handleLoadHistory}
+          disabled={loadingHistory}
+        >
+          {loadingHistory ? <Loader2 className="h-3 w-3 animate-spin" /> : <History className="h-3 w-3" />}
+          Histórico
+        </Button>
+      </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-          <div className="glass-card rounded-2xl p-6 space-y-5">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-info/15 grid place-items-center text-info">
-                <Search className="h-4 w-4" />
-              </div>
-              <div>
-                <h3 className="font-display font-semibold">Buscar leads no LinkedIn</h3>
-                <p className="text-xs text-muted-foreground">Preencha os filtros para encontrar contatos qualificados.</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label="O que você quer buscar?" icon={Search}>
-                <Input placeholder="Ex: dentistas em São Paulo" />
-              </Field>
-              <Field label="Cargo ou profissão" icon={Briefcase}>
-                <Input placeholder="Ex: dentista, CEO, diretor comercial" />
-              </Field>
-              <Field label="Localização" icon={MapPin}>
-                <Input placeholder="Ex: São Paulo, Brasil" />
-              </Field>
-              <Field label="Segmento" icon={Building2}>
-                <Input placeholder="Ex: odontologia, clínicas, estética" />
-              </Field>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs">Quantidade estimada de leads</Label>
-              <div className="flex flex-wrap gap-2">
-                {quantities.map((q) => (
-                  <button
-                    key={q}
-                    onClick={() => setQty(q)}
-                    className={cn(
-                      "px-4 py-2 rounded-xl text-sm font-medium border transition-all",
-                      qty === q
-                        ? "bg-gradient-primary text-primary-foreground border-transparent shadow-glow"
-                        : "border-border-subtle bg-surface text-foreground hover:border-primary/40",
-                    )}
-                  >
-                    {q} leads
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <Button
-              onClick={() => setSearchLoading(true)}
-              size="lg"
-              className="w-full bg-gradient-primary text-primary-foreground shadow-glow"
+      {/* Step 1 — Fonte */}
+      <div>
+        <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">1. Escolha a fonte de busca</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {SOURCES.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => { setSource(s.id); setQuery(""); setState("idle"); setResult(null); }}
+              className={cn(
+                "text-left rounded-2xl border p-4 transition-all duration-300 space-y-2",
+                source === s.id
+                  ? "border-primary/50 bg-gradient-to-br from-primary/10 to-accent/5 shadow-[var(--shadow-glow)]"
+                  : "border-border-subtle bg-surface hover:border-primary/30 hover:bg-surface-elevated",
+              )}
             >
-              <Sparkles className="h-4 w-4 mr-2" />
-              Buscar leads
-            </Button>
-          </div>
-
-          <div className="rounded-2xl border-2 border-dashed border-border bg-surface/30 p-6 space-y-3">
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">Reservado</p>
-            <h3 className="font-display font-semibold">Configuração APIfy</h3>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Espaço reservado para integração futura com APIfy. As credenciais serão configuradas aqui quando a integração estiver ativa.
-            </p>
-            <div className="rounded-lg bg-background/40 border border-border-subtle p-3 text-xs text-muted-foreground italic">
-              Preencher informações aqui
-            </div>
-          </div>
-        </div>
-
-        {results && (
-          <div className="glass-card rounded-2xl overflow-hidden animate-fade-in">
-            <div className="p-5 flex items-center justify-between border-b border-border-subtle">
+              <div className={cn("h-9 w-9 rounded-xl grid place-items-center", source === s.id ? "bg-gradient-to-br from-primary to-primary-glow text-primary-foreground" : "bg-surface-elevated text-foreground")}>
+                <s.icon className="h-4 w-4" />
+              </div>
               <div>
-                <h3 className="font-display font-semibold">Leads encontrados</h3>
-                <p className="text-xs text-muted-foreground">{results.length} contatos prontos para serem criados.</p>
+                <p className="font-semibold text-sm">{s.label}</p>
+                <StatusBadge variant={s.badgeVariant} dot className="mt-1 text-[10px]">{s.badge}</StatusBadge>
               </div>
-              <div className="flex gap-2">
-                <Button variant="outline" className="border-border-subtle" onClick={() => { setResults(null); toast("Resultados descartados"); }}>
-                  <Trash2 className="h-4 w-4 mr-2" /> Excluir contatos
-                </Button>
-                <Button className="bg-gradient-primary text-primary-foreground" onClick={() => setCreateLoading(true)}>
-                  <UserPlus className="h-4 w-4 mr-2" /> Criar esses contatos
-                </Button>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-background/40 text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <Th>Nome</Th><Th>Cargo</Th><Th>Empresa</Th><Th>Telefone</Th><Th>E-mail</Th><Th>LinkedIn</Th><Th>Status</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {results.map((l) => (
-                    <tr key={l.id} className="border-t border-border-subtle hover:bg-surface/40 transition-colors">
-                      <Td className="font-medium">{l.name}</Td>
-                      <Td>{l.role}</Td>
-                      <Td>{l.company}</Td>
-                      <Td className="font-mono text-xs">{l.phone}</Td>
-                      <Td className="text-foreground/80">{l.email}</Td>
-                      <Td className="text-info">{l.linkedin}</Td>
-                      <Td><StatusBadge variant="info" dot>Novo</StatusBadge></Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <LoadingModal
-        open={searchLoading}
-        phrases={searchPhrases}
-        durationMs={4500}
-        title="Buscando leads"
-        onComplete={() => {
-          setSearchLoading(false);
-          setResults(mockLeads);
-          toast.success("Leads encontrados", { description: `${mockLeads.length} contatos prontos.` });
-        }}
-      />
-      <LoadingModal
-        open={createLoading}
-        phrases={createPhrases}
-        durationMs={3200}
-        title="Criando contatos"
-        onComplete={() => {
-          if (results) addLeads(results);
-          setCreateLoading(false);
-          setResults(null);
-          toast.success("Contatos criados com sucesso", {
-            description: "Eles já estão disponíveis na aba Contatos.",
-          });
-        }}
-      />
-    </>
-  );
-}
+      {/* Step 2 — Filtros */}
+      <div>
+        <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">2. Configure sua busca</p>
+        <div className="glass-card rounded-2xl p-6 space-y-5">
 
-function SourceCard({ active, disabled, onClick, icon: Icon, title, description, badge }: any) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={cn(
-        "text-left rounded-2xl border p-5 transition-all duration-300",
-        active && "border-primary/50 bg-gradient-to-br from-primary/10 to-accent/5 shadow-glow",
-        !active && !disabled && "border-border-subtle bg-surface hover:border-primary/30 hover:bg-surface-elevated",
-        disabled && "border-border-subtle bg-surface/50 opacity-60 cursor-not-allowed",
+          <div className="flex items-start gap-3 p-3 rounded-xl bg-info/10 border border-info/20">
+            <Info className="h-4 w-4 text-info mt-0.5 shrink-0" />
+            <p className="text-xs text-info/90 leading-relaxed">
+              {source === "google" && "Busca empresas no Google Maps. Ideal para encontrar negócios locais com telefone e endereço. Use nomes de segmento + cidade."}
+              {source === "linkedin" && "Busca perfis profissionais no LinkedIn. Use cargo + segmento + cidade para melhores resultados."}
+              {source === "instagram" && "Busca perfis públicos por hashtag. Digite o segmento sem espaços (ex: clinica_estetica)."}
+              {source === "website" && "Crawler que extrai e-mails e telefones de sites encontrados via busca. Mais lento, mas abrangente."}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs flex items-center gap-1.5">
+              <Search className="h-3 w-3 text-muted-foreground" />
+              O que você quer buscar?
+            </Label>
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={example.placeholder}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              className="bg-surface border-border-subtle focus:border-primary/50"
+            />
+            {query === "" && (
+              <button
+                className="text-xs text-primary/70 hover:text-primary flex items-center gap-1 mt-1 transition-colors"
+                onClick={() => setQuery(example.query)}
+              >
+                <ChevronRight className="h-3 w-3" /> Usar exemplo: "{example.query}"
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Quantidade de leads</Label>
+            <div className="flex flex-wrap gap-2">
+              {LIMITS.map((l) => (
+                <button
+                  key={l}
+                  onClick={() => setLimit(l)}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-sm font-medium border transition-all",
+                    limit === l
+                      ? "bg-gradient-to-r from-primary to-primary-glow text-primary-foreground border-transparent shadow-[var(--shadow-glow)]"
+                      : "border-border-subtle bg-surface text-foreground hover:border-primary/40",
+                  )}
+                >
+                  {l} leads
+                  {l === 25 && <span className="ml-1.5 text-[10px] opacity-60">rápido</span>}
+                  {l === 100 && <span className="ml-1.5 text-[10px] opacity-60">max</span>}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              ⏱ Tempo estimado: {limit <= 25 ? "1–2 min" : limit <= 50 ? "2–4 min" : "4–8 min"}
+            </p>
+          </div>
+
+          <Button
+            onClick={handleSearch}
+            disabled={state === "loading"}
+            size="lg"
+            className="w-full bg-gradient-to-r from-primary to-primary-glow text-primary-foreground shadow-[var(--shadow-glow)] font-semibold"
+          >
+            {state === "loading" ? (
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Buscando leads... (pode levar alguns minutos)</>
+            ) : (
+              <><Sparkles className="h-4 w-4 mr-2" /> Buscar leads</>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {/* Loading state */}
+      {state === "loading" && (
+        <div className="glass-card rounded-2xl p-6 flex flex-col items-center gap-4 animate-fade-in">
+          <div className="relative h-16 w-16">
+            <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
+            <div className="absolute inset-0 rounded-full border-t-2 border-primary animate-spin" />
+            <div className="absolute inset-0 grid place-items-center">
+              <Sparkles className="h-6 w-6 text-primary" />
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="font-semibold">Buscando no {SOURCES.find(s => s.id === source)?.label}...</p>
+            <p className="text-xs text-muted-foreground mt-1">O actor Apify está rodando. Aguarde sem fechar a página.</p>
+          </div>
+          <div className="flex gap-2 text-xs text-muted-foreground">
+            <span>Query: <strong className="text-foreground">"{query}"</strong></span>
+            <span>·</span>
+            <span>Limite: <strong className="text-foreground">{limit}</strong></span>
+          </div>
+        </div>
       )}
-    >
-      <div className="flex items-start gap-4">
-        <div className={cn("h-11 w-11 rounded-xl grid place-items-center", active ? "bg-gradient-primary text-primary-foreground" : "bg-surface-elevated text-foreground")}>
-          <Icon className="h-5 w-5" />
-        </div>
-        <div className="flex-1">
-          <div className="flex items-center justify-between">
-            <p className="font-display font-semibold">{title}</p>
-            {badge}
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">{description}</p>
-        </div>
-      </div>
-    </button>
-  );
-}
 
-function Field({ label, icon: Icon, children }: { label: string; icon: any; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-xs flex items-center gap-1.5"><Icon className="h-3 w-3 text-muted-foreground" />{label}</Label>
-      {children}
+      {/* Resultado */}
+      {state === "done" && result && (
+        <div className="glass-card rounded-2xl overflow-hidden animate-fade-in">
+          <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border-subtle">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-success/15 grid place-items-center">
+                <CheckCircle2 className="h-5 w-5 text-success" />
+              </div>
+              <div>
+                <p className="font-display font-semibold">Busca concluída</p>
+                <p className="text-xs text-muted-foreground">
+                  {result.totalFound} encontrados · {result.totalImported} importados · {result.duplicatesIgnored} duplicados ignorados · {formatTime(result.executionTimeSeconds)}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-border-subtle text-xs"
+                onClick={() => { setState("idle"); setResult(null); }}
+              >
+                <Trash2 className="h-3 w-3 mr-1.5" /> Nova busca
+              </Button>
+              {result.totalImported > 0 && (
+                <Button
+                  size="sm"
+                  className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground text-xs"
+                  onClick={() => {
+                    toast.success(`${result.totalImported} leads já foram adicionados ao CRM`);
+                  }}
+                >
+                  <UserPlus className="h-3 w-3 mr-1.5" /> Ver no CRM
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="p-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <Stat label="Encontrados" value={result.totalFound} color="text-info" />
+            <Stat label="Importados" value={result.totalImported} color="text-success" />
+            <Stat label="Duplicados" value={result.duplicatesIgnored} color="text-warning" />
+            <Stat label="Tempo" value={formatTime(result.executionTimeSeconds)} color="text-primary" />
+          </div>
+        </div>
+      )}
+
+      {/* Erro */}
+      {state === "error" && (
+        <div className="glass-card rounded-2xl p-5 flex items-start gap-3 border border-destructive/30 animate-fade-in">
+          <XCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-semibold text-sm">Busca falhou</p>
+            <p className="text-xs text-muted-foreground mt-1">{error}</p>
+            {error.includes("APIFY_API_TOKEN") && (
+              <p className="text-xs text-warning mt-2">
+                ⚠️ Configure o <code className="bg-surface px-1 rounded">APIFY_API_TOKEN</code> nas variáveis de ambiente do serviço <strong>sdr-backend</strong> no EasyPanel.
+              </p>
+            )}
+          </div>
+          <Button variant="outline" size="sm" className="border-border-subtle text-xs shrink-0" onClick={() => setState("idle")}>
+            Tentar novamente
+          </Button>
+        </div>
+      )}
+
+      {/* Histórico */}
+      {showHistory && (
+        <div className="glass-card rounded-2xl overflow-hidden animate-fade-in">
+          <div className="p-4 flex items-center justify-between border-b border-border-subtle">
+            <div className="flex items-center gap-2">
+              <History className="h-4 w-4 text-muted-foreground" />
+              <p className="font-semibold text-sm">Histórico de buscas</p>
+            </div>
+            <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowHistory(false)}>Fechar</button>
+          </div>
+          {history.length === 0 ? (
+            <div className="p-8 text-center text-xs text-muted-foreground">Nenhuma busca realizada ainda.</div>
+          ) : (
+            <div className="divide-y divide-border-subtle">
+              {history.map((h) => (
+                <div key={h.id} className="px-5 py-3 flex items-center gap-4 hover:bg-surface/40 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">"{h.query}"</p>
+                    <p className="text-xs text-muted-foreground">{h.source} · {new Date(h.createdAt).toLocaleString("pt-BR")}</p>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-right shrink-0">
+                    <span className="text-info">{h.totalFound} encontrados</span>
+                    <span className="text-success">{h.totalImported} importados</span>
+                    <StatusBadge
+                      variant={h.status === "completed" ? "success" : h.status === "failed" ? "destructive" : "warning"}
+                      dot
+                    >
+                      {h.status === "completed" ? "Concluído" : h.status === "failed" ? "Falhou" : "Em andamento"}
+                    </StatusBadge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function Th({ children }: { children: React.ReactNode }) {
-  return <th className="text-left px-4 py-3 font-medium">{children}</th>;
-}
-function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <td className={cn("px-4 py-3 text-foreground/90", className)}>{children}</td>;
+function Stat({ label, value, color }: { label: string; value: any; color: string }) {
+  return (
+    <div className="text-center">
+      <p className={cn("text-2xl font-display font-bold", color)}>{value}</p>
+      <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+    </div>
+  );
 }
