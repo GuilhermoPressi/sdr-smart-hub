@@ -8,7 +8,7 @@ import axios from 'axios';
 import { LeadSource } from './dto/search-leads.dto';
 
 const ACTOR_MAP: Record<LeadSource, string> = {
-  [LeadSource.GOOGLE]: 'compass/crawler-google-places',
+  [LeadSource.GOOGLE]: 'apify~google-maps-scraper',
   [LeadSource.INSTAGRAM]: 'apify/instagram-scraper',
   [LeadSource.LINKEDIN]: 'curious_coder/linkedin-company-search-export',
   [LeadSource.WEBSITE]: 'apify/website-content-crawler',
@@ -124,13 +124,10 @@ export class ApifyService {
     switch (source) {
       case LeadSource.GOOGLE:
         return {
-          searchStringsArray: [query],
-          maxCrawledPlacesPerSearch: limit,
+          search: query,
           maxCrawledPlaces: limit,
           language: 'pt',
           countryCode: 'br',
-          includeWebResults: false,
-          scrapeDirectories: false,
         };
       case LeadSource.INSTAGRAM:
         return { search: query, searchType: 'hashtag', resultsLimit: limit };
