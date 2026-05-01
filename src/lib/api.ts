@@ -1,4 +1,4 @@
-const BASE_URL = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'https://api.sdr.grupogpressi.com.br';
 
 export interface SearchLeadsPayload {
   source: 'google' | 'linkedin' | 'instagram' | 'website';
@@ -29,7 +29,7 @@ export interface ApifyLeadSearch {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const url = `${BASE_URL}/api/v1${path}`;
+  const url = `${API_BASE_URL}/api/v1${path}`;
   console.log('[API] →', options.method || 'GET', url);
 
   const res = await fetch(url, {
