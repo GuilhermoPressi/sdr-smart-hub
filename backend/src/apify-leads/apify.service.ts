@@ -120,7 +120,7 @@ export class ApifyService {
   private buildInput(source: LeadSource, query: string, limit: number): Record<string, any> {
     switch (source) {
       case LeadSource.GOOGLE:
-        return { searchStringsArray: [query], maxCrawledPlacesPerSearch: limit, language: 'pt', countryCode: 'br' };
+        return { searchStringsArray: [query], maxCrawledPlacesPerSearch: limit, maxCrawledPlaces: limit, language: 'pt', countryCode: 'br', includeWebResults: false, scrapeDirectories: false };
       case LeadSource.INSTAGRAM:
         return { search: query, searchType: 'hashtag', resultsLimit: limit };
       case LeadSource.LINKEDIN:
