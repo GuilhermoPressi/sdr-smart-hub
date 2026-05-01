@@ -1,5 +1,4 @@
-const BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-const API_KEY = import.meta.env.VITE_INTERNAL_API_KEY || '';
+const BASE_URL = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
 
 export interface SearchLeadsPayload {
   source: 'google' | 'linkedin' | 'instagram' | 'website';
@@ -30,18 +29,21 @@ export interface ApifyLeadSearch {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${BASE_URL}/api/v1${path}`, {
+  const url = `${BASE_URL}/api/v1${path}`;
+  console.log('[API] →', options.method || 'GET', url);
+
+  const res = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': API_KEY,
       ...(options.headers || {}),
     },
   });
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body?.message || `Erro ${res.status}: ${res.statusText}`);
+    const msg = Array.isArray(body?.message) ? body.message.join(', ') : (body?.message || `Erro ${res.status}`);
+    throw new Error(msg);
   }
 
   return res.json();
