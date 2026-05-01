@@ -3,6 +3,15 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
+
+# Declara os ARGs para receber as variáveis do EasyPanel em build time
+ARG VITE_BACKEND_URL
+ARG VITE_INTERNAL_API_KEY
+
+# Passa para o ambiente do Vite durante o build
+ENV VITE_BACKEND_URL=$VITE_BACKEND_URL
+ENV VITE_INTERNAL_API_KEY=$VITE_INTERNAL_API_KEY
+
 RUN npm run build
 
 FROM nginx:alpine
