@@ -8,7 +8,7 @@ import axios from 'axios';
 import { LeadSource } from './dto/search-leads.dto';
 
 const ACTOR_MAP: Record<LeadSource, string> = {
-  [LeadSource.GOOGLE]: 'apify~google-maps-scraper',
+  [LeadSource.GOOGLE]: 'apify/google-maps-scraper',
   [LeadSource.INSTAGRAM]: 'apify/instagram-scraper',
   [LeadSource.LINKEDIN]: 'curious_coder/linkedin-company-search-export',
   [LeadSource.WEBSITE]: 'apify/website-content-crawler',
@@ -43,11 +43,12 @@ export class ApifyService {
 
   async runActor(actorId: string, input: Record<string, any>) {
     const client = this.getClient();
-    this.logger.log(`▶ Iniciando actor: ${actorId}`);
+    const urlActorId = actorId.replace("/", "~");
+    this.logger.log(`▶ Iniciando actor: ${actorId} (URL: ${urlActorId})`);
     this.logger.log(`  Input: ${JSON.stringify(input)}`);
 
     try {
-      const res = await client.post(`/acts/${actorId}/runs`, input, {
+      const res = await client.post(`/acts/${urlActorId}/runs`, input, {
         params: { waitForFinish: 120 },
       });
       const run = res.data?.data;
@@ -66,7 +67,7 @@ export class ApifyService {
       const httpStatus = err?.response?.status;
       this.logger.error(`Erro Apify [${httpStatus}]: ${apifyMsg || err.message}`);
       if (httpStatus === 401) throw new BadRequestException('Token Apify inválido ou sem permissão.');
-      if (httpStatus === 404) throw new BadRequestException(`Actor "${actorId}" não encontrado na Apify Store.`);
+      if (httpStatus === 404) throw new BadRequestException(`Actor "${actorId}" não encontrado. Verifique se o actor existe na Apify Store.`);
       if (httpStatus === 429) throw new BadRequestException('Limite de requisições Apify atingido. Aguarde e tente novamente.');
       throw new InternalServerErrorException(`Erro ao chamar Apify: ${apifyMsg || err.message}`);
     }
