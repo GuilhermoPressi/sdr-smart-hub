@@ -38,6 +38,35 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
+
+// ── Evolution API ─────────────────────────────────────────────────────────
+
+export const evolutionApi = {
+  createInstance: (instanceName: string) =>
+    request<any>('/evolution/instances', {
+      method: 'POST',
+      body: JSON.stringify({ instanceName }),
+    }),
+
+  listInstances: () =>
+    request<any[]>('/evolution/instances'),
+
+  getQrCode: (instanceName: string) =>
+    request<any>(`/evolution/instances/${instanceName}/qrcode`),
+
+  getInstanceStatus: (instanceName: string) =>
+    request<any>(`/evolution/instances/${instanceName}/status`),
+
+  deleteInstance: (instanceName: string) =>
+    request<any>(`/evolution/instances/${instanceName}`, { method: 'DELETE' }),
+
+  sendText: (instanceName: string, phone: string, text: string) =>
+    request<any>('/evolution/send-text', {
+      method: 'POST',
+      body: JSON.stringify({ instanceName, phone, text }),
+    }),
+};
+
 export const api = {
   searchLeads: (payload: SearchLeadsPayload) =>
     request<SearchLeadsResponse>('/apify-leads/search', { method: 'POST', body: JSON.stringify(payload) }),
