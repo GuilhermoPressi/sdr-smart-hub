@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import axios from 'axios';
+import { LeadSource } from './dto/search-leads.dto';
 
 export interface NormalizedLead {
   name: string;
@@ -21,7 +22,9 @@ export interface NormalizedLead {
   category: string;
   score: number | null;
   reviewsCount: number | null;
-  source: 'google';
+  source: 'google' | 'facebook';
+  likes: number | null;
+  rating: number | null;
   imported: boolean;
   duplicate: boolean;
   rawData: Record<string, any>;
@@ -121,7 +124,8 @@ export class ApifyService {
 
   // ── GOOGLE MAPS ───────────────────────────────────────────────────────────
 
-  async runAndWait(query: string, limit: number): Promise<NormalizedLead[]> {
+  async runAndWait(source: LeadSource, query: string, limit: number): Promise<NormalizedLead[]> {
+    if (source === LeadSource.FACEBOOK) return this.runFacebook(query, limit);
     const { datasetId } = await this.runActor('compass/crawler-google-places', {
       searchStringsArray: [query],
       maxCrawledPlacesPerSearch: limit,
@@ -169,6 +173,8 @@ export class ApifyService {
       score: item.totalScore ?? null,
       reviewsCount: item.reviewsCount ?? null,
       source: 'google',
+      likes: null,
+      rating: null,
       imported: false,
       duplicate: false,
       rawData: item,

@@ -19,7 +19,7 @@ export class ApifyLeadsService {
   ) {}
 
   async search(dto: SearchLeadsDto, user: any) {
-    const { query, limit } = dto;
+    const { query, limit, source } = dto as any;
     const userId = user?.sub || user?.id || null;
     const companyId = user?.companyId || null;
     const startTime = Date.now();
@@ -27,12 +27,12 @@ export class ApifyLeadsService {
     this.logger.log(`=== BUSCA INICIADA: "${query}" | limit: ${limit} ===`);
 
     const record = this.searchRepo.create({
-      userId, companyId, source: 'google', query, status: SearchStatus.RUNNING,
+      userId, companyId, source: source || 'google', query, status: SearchStatus.RUNNING,
     });
     await this.searchRepo.save(record);
 
     try {
-      const leads = await this.apifyService.runAndWait(query, limit);
+      const leads = await this.apifyService.runAndWait(source || 'google', query, limit);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
       this.logger.log(`Actor finalizado em ${elapsed}s | ${leads.length} leads com telefone`);
 
@@ -70,6 +70,9 @@ export class ApifyLeadsService {
           score: l.score,
           reviewsCount: l.reviewsCount,
           profileUrl: l.profileUrl,
+          likes: (l as any).likes ?? null,
+          rating: (l as any).rating ?? null,
+          source: l.source,
           imported: l.imported,
           duplicate: l.duplicate,
         })),
