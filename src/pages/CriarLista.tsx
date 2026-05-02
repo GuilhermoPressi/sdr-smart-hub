@@ -11,32 +11,11 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-type Source = "google" | "facebook";
 type SearchState = "idle" | "loading" | "done" | "error";
 const LIMITS = [10, 25, 50, 100];
-
-const SOURCES: {
-  id: Source; label: string; emoji: string;
-  description: string; hint: string;
-}[] = [
-  {
-    id: "google", label: "Google Maps", emoji: "📍",
-    description: "Empresas locais com telefone e e-mail extraído do site.",
-    hint: 'Ex: "dentistas em Porto Alegre" ou "clínicas estéticas SP"',
-  },
-  {
-    id: "facebook", label: "Facebook Pages", emoji: "📘",
-    description: "Páginas do Facebook com telefone, e-mail e avaliações.",
-    hint: 'Ex: "pizzaria em Porto Alegre" ou https://facebook.com/nomedapagina',
-  },
-];
-
-function formatTime(s: number) {
-  return s < 60 ? `${s.toFixed(0)}s` : `${(s / 60).toFixed(1)}min`;
-}
+function formatTime(s: number) { return s < 60 ? `${s.toFixed(0)}s` : `${(s / 60).toFixed(1)}min`; }
 
 export default function CriarLista() {
-  const [source, setSource] = useState<Source>("google");
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(10);
   const [state, setState] = useState<SearchState>("idle");
@@ -46,27 +25,23 @@ export default function CriarLista() {
   const [showHistory, setShowHistory] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  const currentSource = SOURCES.find((s) => s.id === source)!;
-
   async function handleSearch() {
     if (!query.trim()) { toast.error("Preencha o que você quer buscar"); return; }
     setState("loading"); setError(""); setResult(null);
     try {
-      const res = await api.searchLeads({ source, query: query.trim(), limit });
-      setResult(res);
-      setState("done");
+      const res = await api.searchLeads({ query: query.trim(), limit });
+      setResult(res); setState("done");
       if (res.totalImported > 0) {
         toast.success(`${res.totalImported} leads importados`, {
           description: `${res.totalDuplicates} duplicados · ${formatTime(res.duration)}`,
         });
       } else {
         toast.warning("Nenhum lead novo importado", {
-          description: res.totalFound > 0 ? `${res.totalFound} encontrados, todos já existem no CRM` : "Tente outro termo de busca",
+          description: res.totalFound > 0 ? `${res.totalFound} encontrados, todos já no CRM` : "Tente outro termo",
         });
       }
     } catch (err: any) {
-      setState("error");
-      setError(err.message || "Erro inesperado");
+      setState("error"); setError(err.message || "Erro inesperado");
       toast.error("Busca falhou", { description: err.message });
     }
   }
@@ -79,13 +54,13 @@ export default function CriarLista() {
   }
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6 max-w-5xl">
 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-display font-semibold text-lg">Criar Lista de Leads</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Busque empresas e extraia contatos prontos para abordagem.</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Busca empresas no Google Maps · Filtra por telefone · Extrai e-mail do site automaticamente.</p>
         </div>
         <Button variant="outline" size="sm" className="border-border-subtle text-xs gap-2"
           onClick={handleLoadHistory} disabled={loadingHistory}>
@@ -94,86 +69,61 @@ export default function CriarLista() {
         </Button>
       </div>
 
-      {/* Seleção de fonte */}
-      <div>
-        <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">1. Escolha a fonte</p>
-        <div className="grid grid-cols-2 gap-3">
-          {SOURCES.map((s) => (
-            <button key={s.id}
-              onClick={() => { setSource(s.id); setQuery(""); setState("idle"); setResult(null); }}
-              className={cn(
-                "text-left rounded-2xl border p-4 transition-all space-y-2",
-                source === s.id
-                  ? "border-primary/50 bg-gradient-to-br from-primary/10 to-accent/5 shadow-[var(--shadow-glow)]"
-                  : "border-border-subtle bg-surface hover:border-primary/30",
-              )}>
-              <div className={cn("h-10 w-10 rounded-xl grid place-items-center text-xl",
-                source === s.id ? "bg-gradient-to-br from-primary to-primary-glow" : "bg-surface-elevated")}>
-                {s.emoji}
-              </div>
-              <div>
-                <p className="font-semibold text-sm">{s.label}</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{s.description}</p>
-              </div>
-              {source === s.id && <StatusBadge variant="success" dot className="text-[10px]">Selecionado</StatusBadge>}
-            </button>
-          ))}
+      {/* Fonte fixa */}
+      <div className="glass-card rounded-2xl p-4 flex items-center gap-4 border border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
+        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-primary-glow grid place-items-center shrink-0">
+          <MapPin className="h-5 w-5 text-primary-foreground" />
         </div>
+        <div className="flex-1">
+          <p className="font-semibold text-sm">Google Maps</p>
+          <p className="text-xs text-muted-foreground">Empresas locais com telefone · E-mail extraído do site · Pronto para WhatsApp</p>
+        </div>
+        <StatusBadge variant="success" dot className="text-xs">Ativo</StatusBadge>
       </div>
 
-      {/* Configuração */}
-      <div>
-        <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">2. Configure sua busca</p>
-        <div className="glass-card rounded-2xl p-6 space-y-5">
-
-          <div className="flex items-start gap-3 p-3 rounded-xl bg-info/10 border border-info/20">
-            <Info className="h-4 w-4 text-info mt-0.5 shrink-0" />
-            <p className="text-xs text-info/90">{currentSource.hint}</p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs flex items-center gap-1.5">
-              <Search className="h-3 w-3 text-muted-foreground" />
-              Busca — segmento + cidade ou URL
-            </Label>
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={currentSource.hint}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              className="bg-surface border-border-subtle focus:border-primary/50"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Quantidade de leads</Label>
-            <div className="flex flex-wrap gap-2">
-              {LIMITS.map((l) => (
-                <button key={l} onClick={() => setLimit(l)}
-                  className={cn("px-4 py-2 rounded-xl text-sm font-medium border transition-all",
-                    limit === l
-                      ? "bg-gradient-to-r from-primary to-primary-glow text-primary-foreground border-transparent shadow-[var(--shadow-glow)]"
-                      : "border-border-subtle bg-surface hover:border-primary/40")}>
-                  {l} leads
-                  {l === 10 && <span className="ml-1.5 text-[10px] opacity-60">teste</span>}
-                  {l === 100 && <span className="ml-1.5 text-[10px] opacity-60">max</span>}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              ⏱ {limit <= 10 ? "30s–1min" : limit <= 25 ? "1–2 min" : limit <= 50 ? "2–4 min" : "4–8 min"}
-              {source === "google" && " · Apenas leads com telefone"}
-              {source === "facebook" && " · Apenas leads com telefone ou e-mail"}
-            </p>
-          </div>
-
-          <Button onClick={handleSearch} disabled={state === "loading"} size="lg"
-            className="w-full bg-gradient-to-r from-primary to-primary-glow text-primary-foreground shadow-[var(--shadow-glow)] font-semibold">
-            {state === "loading"
-              ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Buscando e extraindo contatos...</>
-              : <><Sparkles className="h-4 w-4 mr-2" />Buscar leads</>}
-          </Button>
+      {/* Formulário */}
+      <div className="glass-card rounded-2xl p-6 space-y-5">
+        <div className="flex items-start gap-3 p-3 rounded-xl bg-info/10 border border-info/20">
+          <Info className="h-4 w-4 text-info mt-0.5 shrink-0" />
+          <p className="text-xs text-info/90">
+            Digite o segmento + cidade. Ex: <strong>"dentistas em Porto Alegre"</strong>, <strong>"clínicas estéticas SP"</strong>, <strong>"academias Curitiba"</strong>
+          </p>
         </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs flex items-center gap-1.5">
+            <Search className="h-3 w-3 text-muted-foreground" /> Segmento + cidade
+          </Label>
+          <Input value={query} onChange={(e) => setQuery(e.target.value)}
+            placeholder="Ex: clínicas estéticas em Porto Alegre"
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            className="bg-surface border-border-subtle focus:border-primary/50" />
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs text-muted-foreground">Quantidade</Label>
+          <div className="flex flex-wrap gap-2">
+            {LIMITS.map((l) => (
+              <button key={l} onClick={() => setLimit(l)}
+                className={cn("px-4 py-2 rounded-xl text-sm font-medium border transition-all",
+                  limit === l
+                    ? "bg-gradient-to-r from-primary to-primary-glow text-primary-foreground border-transparent"
+                    : "border-border-subtle bg-surface hover:border-primary/40")}>
+                {l}{l === 10 ? <span className="ml-1 text-[10px] opacity-60">teste</span> : l === 100 ? <span className="ml-1 text-[10px] opacity-60">max</span> : ""}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            ⏱ {limit <= 10 ? "~1min" : limit <= 25 ? "1–2min" : limit <= 50 ? "2–4min" : "4–8min"} · Apenas leads com telefone são importados
+          </p>
+        </div>
+
+        <Button onClick={handleSearch} disabled={state === "loading"} size="lg"
+          className="w-full bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold">
+          {state === "loading"
+            ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Buscando e extraindo contatos...</>
+            : <><Sparkles className="h-4 w-4 mr-2" />Buscar leads</>}
+        </Button>
       </div>
 
       {/* Loading */}
@@ -182,11 +132,13 @@ export default function CriarLista() {
           <div className="relative h-16 w-16">
             <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
             <div className="absolute inset-0 rounded-full border-t-2 border-primary animate-spin" />
-            <div className="absolute inset-0 grid place-items-center text-2xl">{currentSource.emoji}</div>
+            <div className="absolute inset-0 grid place-items-center">
+              <MapPin className="h-6 w-6 text-primary" />
+            </div>
           </div>
           <div className="text-center">
-            <p className="font-semibold">Buscando no {currentSource.label}...</p>
-            <p className="text-xs text-muted-foreground mt-1">Extraindo contatos. Não feche a página.</p>
+            <p className="font-semibold">Buscando no Google Maps...</p>
+            <p className="text-xs text-muted-foreground mt-1">Filtrando leads com telefone e extraindo e-mails. Não feche a página.</p>
           </div>
         </div>
       )}
@@ -203,7 +155,7 @@ export default function CriarLista() {
                 <div>
                   <p className="font-display font-semibold">Busca concluída</p>
                   <p className="text-xs text-muted-foreground">
-                    {result.totalFound} encontrados · {result.totalImported} importados · {result.totalDuplicates} duplicados · {formatTime(result.duration)}
+                    {result.totalFound} com telefone · {result.totalImported} importados · {result.totalDuplicates} duplicados · {formatTime(result.duration)}
                   </p>
                 </div>
               </div>
@@ -212,19 +164,25 @@ export default function CriarLista() {
                 <Trash2 className="h-3 w-3 mr-1.5" /> Nova busca
               </Button>
             </div>
-            <div className="p-5 grid grid-cols-4 gap-4">
-              <Stat label="Encontrados" value={result.totalFound} color="text-info" />
-              <Stat label="Importados" value={result.totalImported} color="text-success" />
-              <Stat label="Duplicados" value={result.totalDuplicates} color="text-warning" />
-              <Stat label="Tempo" value={formatTime(result.duration)} color="text-primary" />
+            <div className="p-5 grid grid-cols-4 gap-4 text-center">
+              {[
+                { label: "Com telefone", value: result.totalFound, color: "text-info" },
+                { label: "Importados", value: result.totalImported, color: "text-success" },
+                { label: "Duplicados", value: result.totalDuplicates, color: "text-warning" },
+                { label: "Tempo", value: formatTime(result.duration), color: "text-primary" },
+              ].map((s) => (
+                <div key={s.label}>
+                  <p className={cn("text-2xl font-display font-bold", s.color)}>{s.value}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Tabela */}
           {result.results?.length > 0 && (
             <div className="glass-card rounded-2xl overflow-hidden">
               <div className="p-4 border-b border-border-subtle">
-                <p className="font-semibold text-sm">Leads encontrados ({result.results.length})</p>
+                <p className="font-semibold text-sm">Leads ({result.results.length})</p>
                 <p className="text-xs text-muted-foreground">📱 = possível WhatsApp · Verde = importado · Amarelo = já existia no CRM</p>
               </div>
               <div className="overflow-x-auto">
@@ -236,7 +194,7 @@ export default function CriarLista() {
                       <Th>WhatsApp</Th>
                       <Th>E-mail</Th>
                       <Th>Site</Th>
-                      <Th>Origem</Th>
+                      <Th>Localização</Th>
                       <Th>Status</Th>
                       <Th>Link</Th>
                     </tr>
@@ -250,43 +208,47 @@ export default function CriarLista() {
                         <Td>
                           <p className="font-medium text-xs">{lead.name || "—"}</p>
                           {lead.category && <p className="text-[10px] text-muted-foreground">{lead.category}</p>}
-                          {lead.rating != null && <p className="text-[10px] text-warning">⭐ {lead.rating}</p>}
-                          {lead.likes != null && <p className="text-[10px] text-muted-foreground">👍 {lead.likes?.toLocaleString()}</p>}
+                          {lead.score != null && <p className="text-[10px] text-warning">⭐ {lead.score?.toFixed(1)}</p>}
                         </Td>
                         <Td className="font-mono text-xs">{lead.phone || "—"}</Td>
                         <Td className="text-center">
                           {lead.has_whatsapp
-                            ? <span className="text-success text-base" title={lead.phone_normalized}>📱</span>
+                            ? <span title={lead.phone_normalized} className="text-lg">📱</span>
                             : <span className="text-muted-foreground text-xs">—</span>}
                         </Td>
                         <Td className="text-xs">
                           {lead.email
-                            ? <a href={`mailto:${lead.email}`} className="text-primary hover:underline flex items-center gap-1"><Mail className="h-3 w-3" />{lead.email}</a>
+                            ? <a href={`mailto:${lead.email}`} className="text-primary hover:underline flex items-center gap-1">
+                                <Mail className="h-3 w-3" />{lead.email}
+                              </a>
                             : <span className="text-muted-foreground">—</span>}
                         </Td>
                         <Td>
                           {lead.website
-                            ? <a href={lead.website} target="_blank" rel="noreferrer" className="text-info text-xs hover:underline flex items-center gap-1 max-w-[110px]">
-                                <Globe className="h-3 w-3 shrink-0" /><span className="truncate">{lead.website.replace(/https?:\/\//, '')}</span>
+                            ? <a href={lead.website} target="_blank" rel="noreferrer"
+                                className="text-info text-xs hover:underline flex items-center gap-1 max-w-[110px]">
+                                <Globe className="h-3 w-3 shrink-0" />
+                                <span className="truncate">{lead.website.replace(/https?:\/\//, '')}</span>
                               </a>
-                            : "—"}
+                            : <span className="text-muted-foreground text-xs">—</span>}
                         </Td>
-                        <Td>
-                          <StatusBadge variant={lead.source === 'google' ? 'info' : 'info'} dot className="text-[10px] capitalize">
-                            {lead.source === 'google' ? '📍 Google' : '📘 Facebook'}
-                          </StatusBadge>
+                        <Td className="text-xs text-muted-foreground">
+                          {[lead.city, lead.state].filter(Boolean).join(", ") || "—"}
                         </Td>
                         <Td>
                           {lead.imported
-                            ? <StatusBadge variant="success" dot className="text-[10px]"><CheckCheck className="h-3 w-3 mr-1" />Importado</StatusBadge>
+                            ? <StatusBadge variant="success" dot className="text-[10px]">
+                                <CheckCheck className="h-3 w-3 mr-1" />Importado
+                              </StatusBadge>
                             : lead.duplicate
                               ? <StatusBadge variant="warning" dot className="text-[10px]">Duplicado</StatusBadge>
                               : <StatusBadge variant="info" dot className="text-[10px]">Ignorado</StatusBadge>}
                         </Td>
                         <Td>
                           {lead.profileUrl
-                            ? <a href={lead.profileUrl} target="_blank" rel="noreferrer" className="text-info text-xs hover:underline flex items-center gap-1">
-                                <ExternalLink className="h-3 w-3" /> Ver
+                            ? <a href={lead.profileUrl} target="_blank" rel="noreferrer"
+                                className="text-info text-xs hover:underline flex items-center gap-1">
+                                <ExternalLink className="h-3 w-3" /> Maps
                               </a>
                             : "—"}
                         </Td>
@@ -319,7 +281,7 @@ export default function CriarLista() {
           <div className="p-4 flex items-center justify-between border-b border-border-subtle">
             <div className="flex items-center gap-2">
               <History className="h-4 w-4 text-muted-foreground" />
-              <p className="font-semibold text-sm">Histórico de buscas</p>
+              <p className="font-semibold text-sm">Histórico</p>
             </div>
             <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowHistory(false)}>Fechar</button>
           </div>
@@ -330,13 +292,13 @@ export default function CriarLista() {
                   <div key={h.id} className="px-5 py-3 flex items-center gap-4 hover:bg-surface/40 transition-colors">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">"{h.query}"</p>
-                      <p className="text-xs text-muted-foreground">{h.source} · {new Date(h.createdAt).toLocaleString("pt-BR")}</p>
+                      <p className="text-xs text-muted-foreground">{new Date(h.createdAt).toLocaleString("pt-BR")}</p>
                     </div>
                     <div className="flex items-center gap-3 text-xs shrink-0">
                       <span className="text-info">{h.totalFound} encontrados</span>
                       <span className="text-success">{h.totalImported} importados</span>
                       <StatusBadge variant={h.status === "completed" ? "success" : h.status === "failed" ? "destructive" : "warning"} dot>
-                        {h.status === "completed" ? "Concluído" : h.status === "failed" ? "Falhou" : "Em andamento"}
+                        {h.status === "completed" ? "OK" : h.status === "failed" ? "Erro" : "Processando"}
                       </StatusBadge>
                     </div>
                   </div>
@@ -348,14 +310,6 @@ export default function CriarLista() {
   );
 }
 
-function Stat({ label, value, color }: { label: string; value: any; color: string }) {
-  return (
-    <div className="text-center">
-      <p className={cn("text-2xl font-display font-bold", color)}>{value}</p>
-      <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
-    </div>
-  );
-}
 function Th({ children }: { children: React.ReactNode }) {
   return <th className="px-4 py-3 text-left whitespace-nowrap">{children}</th>;
 }

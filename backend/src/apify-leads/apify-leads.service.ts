@@ -19,30 +19,29 @@ export class ApifyLeadsService {
   ) {}
 
   async search(dto: SearchLeadsDto, user: any) {
-    const { query, limit, source } = dto as any;
+    const { query, limit } = dto;
     const userId = user?.sub || user?.id || null;
     const companyId = user?.companyId || null;
     const startTime = Date.now();
 
-    this.logger.log(`=== BUSCA INICIADA: "${query}" | limit: ${limit} ===`);
+    this.logger.log(`=== BUSCA: "${query}" | limit: ${limit} ===`);
 
     const record = this.searchRepo.create({
-      userId, companyId, source: source || 'google', query, status: SearchStatus.RUNNING,
+      userId, companyId, source: 'google', query, status: SearchStatus.RUNNING,
     });
     await this.searchRepo.save(record);
 
     try {
-      const leads = await this.apifyService.runAndWait(source || 'google', query, limit);
+      const leads = await this.apifyService.runAndWait(query, limit);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      this.logger.log(`Actor finalizado em ${elapsed}s | ${leads.length} leads com telefone`);
+      this.logger.log(`Actor: ${elapsed}s | ${leads.length} leads com telefone`);
 
       const results = await this.processLeads(leads, userId, companyId);
-
       const totalImported = results.filter((l) => l.imported).length;
       const totalDuplicates = results.filter((l) => l.duplicate).length;
       const totalElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
-      this.logger.log(`=== CONCLUÍDO em ${totalElapsed}s | Encontrados: ${leads.length} | Importados: ${totalImported} | Duplicados: ${totalDuplicates} ===`);
+      this.logger.log(`=== CONCLUÍDO ${totalElapsed}s | ${leads.length} encontrados | ${totalImported} importados | ${totalDuplicates} duplicados ===`);
 
       record.totalFound = leads.length;
       record.totalImported = totalImported;
@@ -63,23 +62,20 @@ export class ApifyLeadsService {
           has_whatsapp: l.has_whatsapp,
           email: l.email,
           website: l.website,
-          address: l.address,
           city: l.city,
           state: l.state,
+          address: l.address,
           category: l.category,
           score: l.score,
           reviewsCount: l.reviewsCount,
           profileUrl: l.profileUrl,
-          likes: (l as any).likes ?? null,
-          rating: (l as any).rating ?? null,
-          source: l.source,
           imported: l.imported,
           duplicate: l.duplicate,
         })),
       };
     } catch (err) {
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      this.logger.error(`=== FALHOU em ${elapsed}s: ${err.message} ===`);
+      this.logger.error(`=== FALHOU ${elapsed}s: ${err.message} ===`);
       record.status = SearchStatus.FAILED;
       record.error = err.message;
       await this.searchRepo.save(record);
@@ -91,21 +87,16 @@ export class ApifyLeadsService {
     const seen = new Set<string>();
 
     for (const lead of leads) {
-      // Chaves de deduplicação
       const keys = [
         lead.phone_normalized ? `phone:${lead.phone_normalized}` : null,
         lead.email ? `email:${lead.email}` : null,
         lead.profileUrl ? `url:${lead.profileUrl}` : null,
       ].filter(Boolean) as string[];
 
-      const isDupInBatch = keys.some((k) => seen.has(k));
-      if (isDupInBatch) {
-        lead.duplicate = true;
-        lead.imported = false;
-        continue;
+      if (keys.some((k) => seen.has(k))) {
+        lead.duplicate = true; lead.imported = false; continue;
       }
 
-      // Verifica duplicado no banco
       const conditions: any[] = [];
       if (lead.phone_normalized) conditions.push({ phone: lead.phone_normalized });
       if (lead.email) conditions.push({ email: lead.email });
@@ -116,13 +107,10 @@ export class ApifyLeadsService {
         : null;
 
       if (existing) {
-        lead.duplicate = true;
-        lead.imported = false;
-        continue;
+        lead.duplicate = true; lead.imported = false; continue;
       }
 
-      // Salva no CRM
-      const contact = this.contactRepo.create({
+      await this.contactRepo.save(this.contactRepo.create({
         name: lead.name || null,
         companyName: lead.companyName || null,
         email: lead.email || null,
@@ -134,8 +122,7 @@ export class ApifyLeadsService {
         state: lead.state || null,
         category: lead.category || null,
         source: 'apify',
-        userId,
-        companyId,
+        userId, companyId,
         metadata: {
           phone_raw: lead.phone,
           phone_normalized: lead.phone_normalized,
@@ -145,24 +132,17 @@ export class ApifyLeadsService {
           importedAt: new Date().toISOString(),
           rawData: lead.rawData,
         },
-      });
-      await this.contactRepo.save(contact);
+      }));
 
-      lead.imported = true;
-      lead.duplicate = false;
+      lead.imported = true; lead.duplicate = false;
       keys.forEach((k) => seen.add(k));
     }
-
     return leads;
   }
 
   async getSearches(user: any) {
     const userId = user?.sub || user?.id || null;
-    return this.searchRepo.find({
-      where: { userId },
-      order: { createdAt: 'DESC' },
-      take: 50,
-    });
+    return this.searchRepo.find({ where: { userId }, order: { createdAt: 'DESC' }, take: 50 });
   }
 
   async getSearchById(id: string, user: any) {

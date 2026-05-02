@@ -1,7 +1,6 @@
 const API_BASE_URL = (import.meta.env.VITE_BACKEND_URL || 'https://api.sdr.grupogpressi.com.br').replace(/\/$/, '');
 
 export interface SearchLeadsPayload {
-  source: 'google' | 'facebook';
   query: string;
   limit: number;
 }
@@ -13,16 +12,13 @@ export interface LeadResult {
   has_whatsapp: boolean;
   email: string;
   website: string;
-  address: string;
   city: string;
   state: string;
+  address: string;
   category: string;
   score: number | null;
   reviewsCount: number | null;
-  likes: number | null;
-  rating: number | null;
   profileUrl: string;
-  source: string;
   imported: boolean;
   duplicate: boolean;
 }
@@ -50,7 +46,6 @@ export interface ApifyLeadSearch {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}/api/v1${path}`;
-  console.log('[API] →', options.method || 'GET', url);
   const res = await fetch(url, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
@@ -65,10 +60,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const api = {
   searchLeads: (payload: SearchLeadsPayload) =>
-    request<SearchLeadsResponse>('/apify-leads/search', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
+    request<SearchLeadsResponse>('/apify-leads/search', { method: 'POST', body: JSON.stringify(payload) }),
   getSearchHistory: () => request<ApifyLeadSearch[]>('/apify-leads/searches'),
   getSearchById: (id: string) => request<ApifyLeadSearch>(`/apify-leads/searches/${id}`),
 };

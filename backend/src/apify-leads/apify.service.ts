@@ -5,7 +5,6 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import axios from 'axios';
-import { LeadSource } from './dto/search-leads.dto';
 
 export interface NormalizedLead {
   name: string;
@@ -22,9 +21,6 @@ export interface NormalizedLead {
   category: string;
   score: number | null;
   reviewsCount: number | null;
-  likes: number | null;
-  rating: number | null;
-  source: 'google' | 'facebook';
   imported: boolean;
   duplicate: boolean;
   rawData: Record<string, any>;
@@ -46,13 +42,10 @@ export class ApifyService {
     });
   }
 
-  // ── Actor runner ──────────────────────────────────────────────────────────
-
   async runActor(actorId: string, input: Record<string, any>) {
     const client = this.getClient();
     const urlActorId = actorId.replace('/', '~');
-    this.logger.log(`▶ Actor: ${actorId}`);
-    this.logger.log(`  Input: ${JSON.stringify(input)}`);
+    this.logger.log(`▶ Actor: ${actorId} | Input: ${JSON.stringify(input)}`);
     try {
       const res = await client.post(`/acts/${urlActorId}/runs`, input, {
         params: { waitForFinish: 120 },
@@ -118,36 +111,37 @@ export class ApifyService {
     }
   }
 
-  // ── Orquestrador ──────────────────────────────────────────────────────────
+  // ── GOOGLE MAPS (único source) ────────────────────────────────────────────
 
-  async runAndWait(source: LeadSource, query: string, limit: number): Promise<NormalizedLead[]> {
-    if (source === LeadSource.FACEBOOK) return this.runFacebook(query, limit);
-    return this.runGoogle(query, limit);
-  }
-
-  // ── GOOGLE MAPS ───────────────────────────────────────────────────────────
-
-  private async runGoogle(query: string, limit: number): Promise<NormalizedLead[]> {
+  async runAndWait(query: string, limit: number): Promise<NormalizedLead[]> {
     const { datasetId } = await this.runActor('compass/crawler-google-places', {
       searchStringsArray: [query],
       maxCrawledPlacesPerSearch: limit,
     });
+
     const items = await this.getDatasetItems(datasetId, limit);
+
+    // Filtra apenas itens com telefone
     const withPhone = items.filter((i) => i.phone || i.phoneUnformatted);
     this.logger.log(`  Com telefone: ${withPhone.length}/${items.length}`);
+
     const leads: NormalizedLead[] = [];
     for (const item of withPhone) {
-      leads.push(await this.normalizeGoogle(item));
+      leads.push(await this.normalizeItem(item));
     }
     return leads;
   }
 
-  private async normalizeGoogle(item: any): Promise<NormalizedLead> {
+  private async normalizeItem(item: any): Promise<NormalizedLead> {
     const rawPhone = item.phone || item.phoneUnformatted || '';
     const phoneNorm = this.normalizePhone(rawPhone);
-    const hasWhatsapp = phoneNorm.startsWith('55') && phoneNorm.length >= 12 && phoneNorm.length <= 13;
+    const hasWhatsapp = phoneNorm.startsWith('55') && phoneNorm.length >= 12;
+
     let email = item.email || '';
-    if (!email && item.website) email = await this.extractEmailFromWebsite(item.website);
+    if (!email && item.website) {
+      email = await this.extractEmailFromWebsite(item.website);
+    }
+
     return {
       name: item.title || item.name || '',
       phone: rawPhone,
@@ -163,54 +157,6 @@ export class ApifyService {
       category: item.categoryName || item.category || '',
       score: item.totalScore ?? null,
       reviewsCount: item.reviewsCount ?? null,
-      likes: null,
-      rating: null,
-      source: 'google',
-      imported: false,
-      duplicate: false,
-      rawData: item,
-    };
-  }
-
-  // ── FACEBOOK PAGES ────────────────────────────────────────────────────────
-
-  private async runFacebook(query: string, limit: number): Promise<NormalizedLead[]> {
-    const startUrls = query.startsWith('http')
-      ? [{ url: query }]
-      : [{ url: `https://www.facebook.com/search/pages/?q=${encodeURIComponent(query)}` }];
-    this.logger.log(`Facebook startUrls: ${JSON.stringify(startUrls)}`);
-    const { datasetId } = await this.runActor('apify/facebook-pages-scraper', {
-      startUrls,
-      maxPages: limit,
-    });
-    const items = await this.getDatasetItems(datasetId, limit);
-    const valid = items.filter((i) => i.phone || i.email);
-    this.logger.log(`  Com phone/email: ${valid.length}/${items.length}`);
-    return valid.map((item) => this.normalizeFacebook(item));
-  }
-
-  private normalizeFacebook(item: any): NormalizedLead {
-    const rawPhone = item.phone || item.phoneNumber || '';
-    const phoneNorm = this.normalizePhone(rawPhone);
-    const hasWhatsapp = phoneNorm.startsWith('55') && phoneNorm.length >= 12 && phoneNorm.length <= 13;
-    return {
-      name: item.title || item.name || '',
-      phone: rawPhone,
-      phone_normalized: phoneNorm,
-      has_whatsapp: hasWhatsapp,
-      email: item.email || '',
-      companyName: item.title || item.name || '',
-      website: item.website || '',
-      address: item.address || '',
-      city: item.city || '',
-      state: item.state || '',
-      profileUrl: item.pageUrl || item.url || '',
-      category: Array.isArray(item.categories) ? item.categories.join(', ') : (item.category || ''),
-      score: null,
-      reviewsCount: null,
-      likes: item.likes ?? item.fanCount ?? null,
-      rating: item.rating ?? item.overallStarRating ?? null,
-      source: 'facebook',
       imported: false,
       duplicate: false,
       rawData: item,
@@ -251,15 +197,8 @@ export class ApifyService {
         if (found) return found.toLowerCase();
       }
       return valid[0].toLowerCase();
-    } catch (err) {
-      this.logger.debug(`Email extraction falhou para ${website}: ${err.message}`);
+    } catch {
       return '';
     }
-  }
-
-  extractEmail(text: string): string {
-    if (!text) return '';
-    const match = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-    return match ? match[0].toLowerCase() : '';
   }
 }
