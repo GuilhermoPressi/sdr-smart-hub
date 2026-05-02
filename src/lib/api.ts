@@ -55,7 +55,7 @@ export const api = {
   // AI Config
   getAiConfigs: () => request<any[]>('/ai-config'),
   getActiveAiConfig: () => request<any>('/ai-config/active'),
-  saveAiConfig: (data: any) => data.id
+  saveAiConfig: (data: any) => (data.id && data.id.length > 10)
     ? request<any>(`/ai-config/${data.id}`, { method: 'PUT', body: JSON.stringify(data) })
     : request<any>('/ai-config', { method: 'POST', body: JSON.stringify(data) }),
   activateAiConfig: (id: string) =>
