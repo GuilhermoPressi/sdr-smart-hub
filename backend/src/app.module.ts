@@ -1,8 +1,14 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ApifyLeadsModule } from './apify-leads/apify-leads.module';
+import { MessagesModule } from './messages/messages.module';
+import { AiConfigModule } from './ai-config/ai-config.module';
+import { EvolutionModule } from './evolution/evolution.module';
+import { OpenaiModule } from './openai/openai.module';
 import { Contact } from './contacts/entities/contact.entity';
 import { ApifyLeadSearch } from './apify-leads/entities/apify-lead-search.entity';
+import { Message } from './messages/entities/message.entity';
+import { AiConfig } from './ai-config/entities/ai-config.entity';
 
 @Module({
   imports: [
@@ -13,11 +19,15 @@ import { ApifyLeadSearch } from './apify-leads/entities/apify-lead-search.entity
       username: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASS || 'postgres',
       database: process.env.DB_NAME || 'sdr_smart_hub',
-      entities: [Contact, ApifyLeadSearch],
+      entities: [Contact, ApifyLeadSearch, Message, AiConfig],
       synchronize: true,
       ssl: false,
     }),
     ApifyLeadsModule,
+    MessagesModule,
+    AiConfigModule,
+    EvolutionModule,
+    OpenaiModule,
   ],
 })
 export class AppModule {}

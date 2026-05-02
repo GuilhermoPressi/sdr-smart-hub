@@ -54,6 +54,30 @@ export class Contact {
   @Column({ default: 'manual' })
   source: string;
 
+  @Column({ default: 'novo' })
+  stage: string;
+
+  @Column({ name: 'ia_status', default: 'Aguardando' })
+  iaStatus: string;
+
+  @Column({ default: 'Frio' })
+  temperature: string;
+
+  @Column({ default: 'Novo' })
+  status: string;
+
+  @Column({ nullable: true })
+  origin: string;
+
+  @Column({ type: 'text', array: true, default: '{}' })
+  tags: string[];
+
+  @Column({ nullable: true })
+  crm: string;
+
+  @Column({ name: 'last_interaction', nullable: true })
+  lastInteraction: Date;
+
   @Column({ name: 'company_id', nullable: true })
   companyId: string;
 

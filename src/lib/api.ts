@@ -71,6 +71,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  // ─── Apify Leads ──────────────────────────────────────
   searchLeads: (payload: SearchLeadsPayload) =>
     request<SearchLeadsResponse>('/apify-leads/search', {
       method: 'POST',
@@ -82,4 +83,51 @@ export const api = {
 
   getSearchById: (id: string) =>
     request<ApifyLeadSearch>(`/apify-leads/searches/${id}`),
+
+  // ─── Evolution API (WhatsApp) ─────────────────────────
+  createInstance: (instanceName: string, webhookUrl?: string) =>
+    request<any>('/evolution/instances', {
+      method: 'POST',
+      body: JSON.stringify({ instanceName, webhookUrl }),
+    }),
+
+  listInstances: () =>
+    request<any[]>('/evolution/instances'),
+
+  getQrCode: (instanceName: string) =>
+    request<any>(`/evolution/instances/${instanceName}/qrcode`),
+
+  getInstanceStatus: (instanceName: string) =>
+    request<any>(`/evolution/instances/${instanceName}/status`),
+
+  deleteInstance: (instanceName: string) =>
+    request<any>(`/evolution/instances/${instanceName}`, { method: 'DELETE' }),
+
+  sendText: (instanceName: string, phone: string, text: string) =>
+    request<any>('/evolution/send-text', {
+      method: 'POST',
+      body: JSON.stringify({ instanceName, phone, text }),
+    }),
+
+  // ─── AI Config ────────────────────────────────────────
+  getAiConfigs: () =>
+    request<any[]>('/ai-config'),
+
+  getAiConfig: (id: string) =>
+    request<any>(`/ai-config/${id}`),
+
+  saveAiConfig: (data: any) =>
+    request<any>('/ai-config', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateAiConfig: (id: string, data: any) =>
+    request<any>(`/ai-config/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteAiConfig: (id: string) =>
+    request<any>(`/ai-config/${id}`, { method: 'DELETE' }),
 };

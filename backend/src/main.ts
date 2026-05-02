@@ -28,6 +28,9 @@ async function bootstrap() {
   const port = process.env.PORT || 3001;
   await app.listen(port);
   console.log(`🚀 Backend rodando em http://localhost:${port}/api/v1`);
-  console.log(`   APIFY_API_TOKEN: ${process.env.APIFY_API_TOKEN ? '✅ configurado' : '❌ NÃO configurado'}`);
+  console.log(`   APIFY_API_TOKEN:    ${process.env.APIFY_API_TOKEN ? '✅ configurado' : '❌ NÃO configurado'}`);
+  console.log(`   EVOLUTION_API_URL:  ${process.env.EVOLUTION_API_URL ? '✅ ' + process.env.EVOLUTION_API_URL : '❌ NÃO configurado'}`);
+  console.log(`   EVOLUTION_API_KEY:  ${process.env.EVOLUTION_API_KEY ? '✅ configurado' : '❌ NÃO configurado'}`);
+  console.log(`   OPENAI_API_KEY:     ${process.env.OPENAI_API_KEY ? '✅ configurado' : '❌ NÃO configurado'}`);
 }
 bootstrap();
