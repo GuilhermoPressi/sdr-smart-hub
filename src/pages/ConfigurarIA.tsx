@@ -9,6 +9,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useApp } from "@/store/app";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 
 import { StepIndicator } from "./configurar-ia/components";
 import { STEPS, BUILD_PHRASES } from "./configurar-ia/constants";
@@ -25,6 +26,22 @@ export default function ConfigurarIA() {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+
+  // Load existing configs on mount
+  useState(() => {
+    const loadConfigs = async () => {
+      try {
+        const configs = await api.getAiConfigs();
+        if (configs.length > 0) {
+          // If we have configs, maybe auto-select one or just show the list
+        }
+      } catch (e) {
+        console.error("Erro ao carregar configurações", e);
+      }
+    };
+    loadConfigs();
+  });
+
 
   // Step validation
   const stepValid = [
@@ -225,27 +242,31 @@ export default function ConfigurarIA() {
         phrases={BUILD_PHRASES}
         durationMs={4500}
         title="Construindo sua IA de Atendimento"
-        onComplete={() => {
-          setLoading(false);
-          
-          // Generate ID if it doesn't have one
-          const agentId = ai.id || `ai_${Date.now()}`;
-          
-          // Generate Display Name
-          const generatedName = `${ai.internalName} + ${ai.company} + ${ai.product}`;
-          
-          const finalAgent = {
-            ...ai,
-            id: agentId,
-            displayName: generatedName,
-            built: true
-          };
-          
-          setAI(finalAgent); // Update current editing
-          saveAgent(finalAgent); // Save to list
-          
-          setSuccess(true);
-          toast.success("IA salva com sucesso");
+        onComplete={async () => {
+          try {
+            // Generate Display Name
+            const generatedName = `${ai.internalName} + ${ai.company} + ${ai.product}`;
+            
+            const finalAgent = {
+              ...ai,
+              displayName: generatedName,
+              built: true
+            };
+            
+            // Real Save to Backend
+            const savedAgent = await api.saveAiConfig(finalAgent);
+            
+            setAI(savedAgent); 
+            saveAgent(savedAgent); 
+            
+            setLoading(false);
+            setSuccess(true);
+            toast.success("IA salva e ativada no servidor!");
+          } catch (error) {
+            setLoading(false);
+            toast.error("Erro ao salvar configuração no servidor.");
+            console.error(error);
+          }
         }}
       />
 

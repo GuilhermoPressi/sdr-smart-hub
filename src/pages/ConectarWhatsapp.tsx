@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useApp } from "@/store/app";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { LoadingModal } from "@/components/shared/LoadingModal";
-import { CheckCircle2, MessageCircle, QrCode, ShieldCheck, FileCheck2, Smartphone } from "lucide-react";
+import { CheckCircle2, MessageCircle, QrCode, ShieldCheck, FileCheck2, Smartphone, RefreshCw, LogOut } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
 
 const phrases = ["Preparando conexão...", "Gerando ambiente seguro...", "Aguardando QR Code..."];
 
@@ -14,11 +15,97 @@ export default function ConectarWhatsapp() {
   const { connections, setConnection } = useApp();
   const [loadingKey, setLoadingKey] = useState<null | "official" | "evolution">(null);
   const [number, setNumber] = useState("");
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [instanceName] = useState("Gpressi");
+  const [isChecking, setIsChecking] = useState(true);
 
-  const start = (k: "official" | "evolution") => {
-    setConnection(k, "connecting");
-    setLoadingKey(k);
+  // Check initial status
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const instances = await api.listInstances();
+        const instance = instances.find(i => i.name === instanceName);
+        
+        if (instance) {
+          if (instance.connectionStatus === 'open') {
+            setConnection("evolution", "connected" as any);
+          } else {
+            setConnection("evolution", "pending");
+            fetchQrCode();
+          }
+        } else {
+          setConnection("evolution", "disconnected");
+        }
+      } catch (error) {
+        console.error("Erro ao carregar instâncias", error);
+      } finally {
+        setIsChecking(false);
+      }
+    };
+
+    checkStatus();
+  }, []);
+
+  // Poll status if pending
+  useEffect(() => {
+    let interval: any;
+    if (connections.evolution === "pending") {
+      interval = setInterval(async () => {
+        try {
+          const status = await api.getInstanceStatus(instanceName);
+          if (status.instance.state === 'open' || status.state === 'open') {
+            setConnection("evolution", "connected" as any);
+            setQrCode(null);
+            toast.success("WhatsApp conectado com sucesso!");
+            clearInterval(interval);
+          }
+        } catch (e) {
+          // ignore
+        }
+      }, 5000);
+    }
+    return () => clearInterval(interval);
+  }, [connections.evolution]);
+
+  const fetchQrCode = async () => {
+    try {
+      const data = await api.getQrCode(instanceName);
+      if (data.base64) {
+        setQrCode(data.base64);
+      }
+    } catch (error) {
+      console.error("Erro ao buscar QR Code", error);
+    }
   };
+
+  const handleConnectEvolution = async () => {
+    setLoadingKey("evolution");
+    try {
+      // Try to create or just get QR if already exists
+      await api.createInstance(instanceName);
+      await fetchQrCode();
+      setConnection("evolution", "pending");
+    } catch (error: any) {
+      // If already exists, just fetch QR
+      await fetchQrCode();
+      setConnection("evolution", "pending");
+    } finally {
+      setLoadingKey(null);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (!confirm("Deseja realmente desconectar? A instância será removida.")) return;
+    try {
+      await api.deleteInstance(instanceName);
+      setConnection("evolution", "disconnected");
+      setQrCode(null);
+      toast.success("Desconectado com sucesso.");
+    } catch (error) {
+      toast.error("Erro ao desconectar.");
+    }
+  };
+
 
   return (
     <>
@@ -93,14 +180,31 @@ export default function ConectarWhatsapp() {
               <StatusVariant state={connections.evolution} />
             </div>
 
-            <div className="aspect-square max-w-[240px] mx-auto w-full rounded-2xl border-2 border-dashed border-border bg-background/40 grid place-items-center text-center p-6">
-              <div className="space-y-2">
-                <QrCode className="h-12 w-12 text-muted-foreground/60 mx-auto" />
-                <p className="text-sm font-medium text-foreground/80">QR Code será exibido aqui</p>
-                <p className="text-[11px] text-muted-foreground">
-                  Em breve, escaneie este QR Code para conectar seu WhatsApp.
-                </p>
-              </div>
+            <div className="aspect-square max-w-[240px] mx-auto w-full rounded-2xl border-2 border-dashed border-border bg-background/40 grid place-items-center text-center p-6 relative overflow-hidden">
+              {qrCode ? (
+                <div className="space-y-3 animate-in fade-in zoom-in duration-500">
+                  <img src={qrCode} alt="QR Code" className="w-full aspect-square rounded-lg shadow-glow-sm" />
+                  <p className="text-[10px] text-muted-foreground animate-pulse">Escaneie para conectar</p>
+                </div>
+              ) : connections.evolution === ("connected" as any) ? (
+                <div className="space-y-3 text-whatsapp">
+                  <div className="h-16 w-16 rounded-full bg-whatsapp/20 grid place-items-center mx-auto">
+                    <CheckCircle2 className="h-8 w-8" />
+                  </div>
+                  <p className="text-sm font-semibold">WhatsApp Conectado</p>
+                  <p className="text-[11px] text-muted-foreground">Pronto para automatizar com IA.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <QrCode className="h-12 w-12 text-muted-foreground/60 mx-auto" />
+                  <p className="text-sm font-medium text-foreground/80">
+                    {isChecking ? "Verificando status..." : "QR Code será exibido aqui"}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Clique no botão abaixo para gerar a conexão.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="rounded-xl border border-border-subtle bg-background/40 p-3 flex items-center gap-3">
@@ -110,17 +214,35 @@ export default function ConectarWhatsapp() {
               </p>
             </div>
 
-            <Button
-              onClick={() => start("evolution")}
-              disabled={connections.evolution !== "disconnected"}
-              className="w-full bg-whatsapp text-whatsapp-foreground hover:bg-whatsapp/90"
-            >
-              {connections.evolution === "pending" ? (
-                <><CheckCircle2 className="h-4 w-4 mr-2" /> QR Code aguardando integração</>
+            <div className="flex gap-2">
+              {connections.evolution === ("connected" as any) || connections.evolution === "pending" ? (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={fetchQrCode}
+                    className="flex-1 border-border-subtle"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" /> Atualizar
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={handleDisconnect}
+                    className="flex-1"
+                  >
+                    <LogOut className="h-4 w-4 mr-2" /> Desconectar
+                  </Button>
+                </>
               ) : (
-                <>Conectar Evolution</>
+                <Button
+                  onClick={handleConnectEvolution}
+                  disabled={isChecking || loadingKey === "evolution"}
+                  className="w-full bg-whatsapp text-whatsapp-foreground hover:bg-whatsapp/90 shadow-glow-sm"
+                >
+                  <MessageCircle className="h-4 w-4 mr-2" />
+                  {isChecking ? "Verificando..." : "Conectar Evolution"}
+                </Button>
               )}
-            </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -144,8 +266,9 @@ export default function ConectarWhatsapp() {
   );
 }
 
-function StatusVariant({ state }: { state: "disconnected" | "connecting" | "pending" }) {
-  if (state === "pending") return <StatusBadge variant="warning" dot>Aguardando</StatusBadge>;
+function StatusVariant({ state }: { state: "disconnected" | "connecting" | "pending" | "connected" }) {
+  if (state === "connected") return <StatusBadge variant="success" dot>Conectado</StatusBadge>;
+  if (state === "pending") return <StatusBadge variant="warning" dot>Aguardando QR</StatusBadge>;
   if (state === "connecting") return <StatusBadge variant="info" dot>Conectando</StatusBadge>;
-  return <StatusBadge variant="muted" dot>Não conectado</StatusBadge>;
+  return <StatusBadge variant="muted" dot>Desconectado</StatusBadge>;
 }
