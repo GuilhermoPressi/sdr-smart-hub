@@ -3,22 +3,38 @@ import { create } from "zustand";
 export type Temperature = "Frio" | "Morno" | "Quente";
 export type StageId =
   | "novo"
-  | "abordado"
+  | "envio"
   | "respondeu"
+  | "atendimento_ia"
   | "qualificado"
-  | "aguardando"
-  | "proposta"
-  | "fechado"
+  | "atendimento_humano"
+  | "orcamento"
+  | "followup"
+  | "ganho"
   | "perdido";
+
+export interface Message {
+  id: string;
+  text: string;
+  sender: "lead" | "ia" | "human";
+  time: string;
+  status?: "sent" | "delivered" | "read";
+}
 
 export interface Lead {
   id: string;
   name: string;
-  role?: string;
-  company?: string;
+  jobTitle?: string;
+  companyName?: string;
   phone: string;
   email: string;
-  linkedin?: string;
+  profileUrl?: string;
+  website?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  category?: string;
+  username?: string;
   origin: string;
   tags: string[];
   crm: string;
@@ -30,18 +46,34 @@ export interface Lead {
 }
 
 export interface AIConfig {
-  internalName: string;
+  id: string;
   displayName: string;
+  internalName: string;
   company: string;
   segment: string;
+  region: string;
   product: string;
   audience: string;
   problem: string;
   benefit: string;
+  differentials: string;
+  pricingFactors: string;
   tone: "Profissional" | "Consultivo" | "Amigável" | "Direto" | "Premium";
+  formality: "Informal" | "Equilibrado" | "Formal";
+  responseLength: "Curtas" | "Médias" | "Detalhadas";
+  initialMessage: string;
+  goalPreset: string;
   goal: string;
-  bant: { budget: string; authority: string; need: string; timeline: string };
-  criteria: string;
+  qualifiedCriteria: string;
+  discovery: {
+    need: string;
+    timeline: string;
+    investment: string;
+    authority: string;
+    quotationData: string;
+  };
+  neverPromise: string;
+  neverAsk: string;
   instructions: string;
   built: boolean;
 }
@@ -51,39 +83,72 @@ export interface Connections {
   evolution: "disconnected" | "connecting" | "pending";
 }
 
+export interface FlowConfig {
+  officialInitialMsg: string;
+  officialTransitionMsg: string;
+  evolutionInitialMsg: string;
+  noResponseTimeout: number; // hours
+  noResponseAction: "novo" | "followup" | "perdido";
+  pauseOnHumanReply: boolean;
+  qualifiedStage: StageId;
+}
+
 interface Store {
   ai: AIConfig;
   setAI: (patch: Partial<AIConfig>) => void;
   markBuilt: () => void;
 
-  connections: Connections;
-  setConnection: (key: keyof Connections, value: Connections[keyof Connections]) => void;
+  agents: AIConfig[];
+  saveAgent: (agent: AIConfig) => void;
+  deleteAgent: (id: string) => void;
+  resetAI: () => void;
+
+  flow: FlowConfig;
+  setFlow: (patch: Partial<FlowConfig>) => void;
+  connections: { official: "disconnected" | "connecting" | "pending"; evolution: "disconnected" | "connecting" | "pending" };
+  setConnection: (key: "official" | "evolution", val: "disconnected" | "connecting" | "pending") => void;
 
   leads: Lead[];
   addLeads: (leads: Lead[]) => void;
   updateLead: (id: string, patch: Partial<Lead>) => void;
   bulkUpdate: (ids: string[], patch: Partial<Lead>) => void;
   moveLead: (id: string, stage: StageId) => void;
+
+  chatHistory: Record<string, Message[]>;
+  addMessage: (leadId: string, msg: Message) => void;
+  activeChatLeadId: string | null;
+  setActiveChatLead: (id: string | null) => void;
 }
 
 const defaultAI: AIConfig = {
-  internalName: "",
+  id: "",
   displayName: "",
+  internalName: "",
   company: "",
   segment: "",
+  region: "",
   product: "",
   audience: "",
   problem: "",
   benefit: "",
+  differentials: "",
+  pricingFactors: "",
   tone: "Consultivo",
+  formality: "Equilibrado",
+  responseLength: "Curtas",
+  initialMessage: "",
+  goalPreset: "",
   goal: "",
-  bant: {
-    budget: "Pergunte de forma natural se ele já investe ou tem previsão de investimento para resolver esse problema.",
-    authority: "Pergunte se ele é responsável pela decisão ou se existe outra pessoa envolvida.",
-    need: "Pergunte qual é o principal desafio atual e o impacto desse problema no negócio.",
-    timeline: "Pergunte em quanto tempo ele pretende resolver esse problema ou iniciar uma solução.",
+  qualifiedCriteria: "",
+  discovery: {
+    need: "Pergunte qual é o principal desafio atual e o que o lead quer resolver.",
+    timeline: "Pergunte em quanto tempo ele pretende resolver isso ou iniciar a solução.",
+    investment: "Pergunte de forma natural se ele já tem uma previsão de investimento ou se ainda está levantando valores.",
+    authority: "Pergunte se ele mesmo decide ou se existem outras pessoas envolvidas na decisão.",
+    quotationData: "",
   },
-  criteria: "",
+  neverPromise: "",
+  neverAsk: "",
   instructions: "",
   built: false,
 };
@@ -92,11 +157,13 @@ const seedLeads: Lead[] = [
   {
     id: "l1",
     name: "Mariana Costa",
-    role: "Dentista",
-    company: "Clínica Costa",
+    jobTitle: "Dentista",
+    companyName: "Clínica Costa",
     phone: "+55 11 98765-4321",
     email: "mariana@email.com",
-    linkedin: "/in/marianacosta",
+    profileUrl: "https://linkedin.com/in/marianacosta",
+    city: "São Paulo",
+    state: "SP",
     origin: "LinkedIn",
     tags: ["Dentistas SP"],
     crm: "Pipeline Comercial",
@@ -109,15 +176,17 @@ const seedLeads: Lead[] = [
   {
     id: "l2",
     name: "Rafael Lima",
-    role: "Diretor",
-    company: "Odonto Prime",
+    jobTitle: "Diretor",
+    companyName: "Odonto Prime",
     phone: "+55 11 91234-5678",
     email: "rafael@email.com",
-    linkedin: "/in/rafaellima",
+    profileUrl: "https://linkedin.com/in/rafaellima",
+    city: "Campinas",
+    state: "SP",
     origin: "LinkedIn",
     tags: ["Clínicas"],
     crm: "Pipeline Comercial",
-    stage: "respondeu",
+    stage: "atendimento_ia",
     status: "Em conversa",
     iaStatus: "Em qualificação",
     temperature: "Quente",
@@ -126,32 +195,37 @@ const seedLeads: Lead[] = [
   {
     id: "l3",
     name: "Camila Rocha",
-    role: "Sócia",
-    company: "Clínica Rocha",
+    jobTitle: "Sócia",
+    companyName: "Clínica Rocha",
     phone: "+55 11 99888-1122",
     email: "camila@email.com",
-    linkedin: "/in/camilarocha",
+    profileUrl: "https://linkedin.com/in/camilarocha",
+    city: "Ribeirão Preto",
+    state: "SP",
     origin: "LinkedIn",
     tags: ["Odonto SP"],
     crm: "Pipeline Comercial",
-    stage: "aguardando",
+    stage: "atendimento_humano",
     status: "Qualificado",
-    iaStatus: "Aguardando proposta",
+    iaStatus: "Vendedor assumiu",
     temperature: "Quente",
     lastInteraction: "Ontem",
   },
   {
     id: "l4",
     name: "Eduardo Martins",
-    role: "CEO",
-    company: "Smile Group",
+    jobTitle: "CEO",
+    companyName: "Smile Group",
     phone: "+55 21 99888-7766",
     email: "edu@smilegroup.com",
+    profileUrl: "https://linkedin.com/in/edumartins",
+    city: "Rio de Janeiro",
+    state: "RJ",
     origin: "LinkedIn",
     tags: ["Decisor"],
     crm: "Pipeline Comercial",
-    stage: "abordado",
-    status: "Template enviado",
+    stage: "envio",
+    status: "Mensagem enviada",
     iaStatus: "Aguardando resposta",
     temperature: "Morno",
     lastInteraction: "Há 1 hora",
@@ -159,15 +233,18 @@ const seedLeads: Lead[] = [
   {
     id: "l5",
     name: "Patrícia Alves",
-    role: "Gestora",
-    company: "Orto Vida",
+    jobTitle: "Gestora",
+    companyName: "Orto Vida",
     phone: "+55 31 91234-5678",
     email: "patricia@ortovida.com",
+    profileUrl: "https://linkedin.com/in/patalves",
+    city: "Belo Horizonte",
+    state: "MG",
     origin: "LinkedIn",
     tags: ["Ortodontia"],
     crm: "Pipeline Comercial",
     stage: "qualificado",
-    status: "BANT completo",
+    status: "Lead qualificado",
     iaStatus: "Pronto para vendedor",
     temperature: "Quente",
     lastInteraction: "Há 30 minutos",
@@ -175,15 +252,18 @@ const seedLeads: Lead[] = [
   {
     id: "l6",
     name: "Lucas Ferreira",
-    role: "Diretor Comercial",
-    company: "Dental Plus",
+    jobTitle: "Diretor Comercial",
+    companyName: "Dental Plus",
     phone: "+55 11 95555-1010",
     email: "lucas@dentalplus.com",
+    profileUrl: "https://linkedin.com/in/lucasferreira",
+    city: "Osasco",
+    state: "SP",
     origin: "LinkedIn",
     tags: ["Clínicas"],
     crm: "Pipeline Comercial",
-    stage: "proposta",
-    status: "Proposta enviada",
+    stage: "orcamento",
+    status: "Orçamento enviado",
     iaStatus: "Aguardando retorno",
     temperature: "Quente",
     lastInteraction: "Há 3 dias",
@@ -191,14 +271,17 @@ const seedLeads: Lead[] = [
   {
     id: "l7",
     name: "Renata Souza",
-    role: "Sócia",
-    company: "Estética Bella",
+    jobTitle: "Sócia",
+    companyName: "Estética Bella",
     phone: "+55 41 98888-2020",
     email: "renata@bella.com",
+    profileUrl: "https://instagram.com/esteticabella",
+    city: "Curitiba",
+    state: "PR",
     origin: "LinkedIn",
     tags: ["Estética"],
     crm: "Pipeline Comercial",
-    stage: "fechado",
+    stage: "ganho",
     status: "Cliente",
     iaStatus: "Negócio fechado",
     temperature: "Quente",
@@ -222,10 +305,34 @@ const seedLeads: Lead[] = [
   },
 ];
 
+const defaultFlow: FlowConfig = {
+  officialInitialMsg: "Olá, tudo bem? Aqui é da equipe {{nome_empresa}}. Vi seu interesse em {{produto_servico}} e queria entender melhor sua necessidade para te direcionar corretamente.",
+  officialTransitionMsg: "Perfeito. Vou continuar seu atendimento por outro número para facilitar a conversa, tudo bem?",
+  evolutionInitialMsg: "Oi, aqui é {{nome_ia}}, da {{nome_empresa}}. Falei com você pelo outro número e vou seguir por aqui para te atender melhor. Me conta rapidinho: o que você está buscando resolver nesse momento?",
+  noResponseTimeout: 24,
+  noResponseAction: "novo",
+  pauseOnHumanReply: true,
+  qualifiedStage: "qualificado",
+};
+
 export const useApp = create<Store>((set) => ({
   ai: defaultAI,
-  setAI: (patch) => set((s) => ({ ai: { ...s.ai, ...patch, bant: { ...s.ai.bant, ...(patch.bant || {}) } } })),
+  setAI: (patch) => set((s) => ({ ai: { ...s.ai, ...patch, discovery: { ...s.ai.discovery, ...(patch.discovery || {}) } } })),
   markBuilt: () => set((s) => ({ ai: { ...s.ai, built: true } })),
+
+  agents: [],
+  saveAgent: (agent) => set((s) => {
+    const exists = s.agents.some(a => a.id === agent.id);
+    if (exists) {
+      return { agents: s.agents.map(a => a.id === agent.id ? agent : a) };
+    }
+    return { agents: [...s.agents, agent] };
+  }),
+  deleteAgent: (id) => set((s) => ({ agents: s.agents.filter(a => a.id !== id) })),
+  resetAI: () => set({ ai: defaultAI }),
+
+  flow: defaultFlow,
+  setFlow: (patch) => set((s) => ({ flow: { ...s.flow, ...patch } })),
 
   connections: { official: "disconnected", evolution: "disconnected" },
   setConnection: (key, value) =>
@@ -245,15 +352,31 @@ export const useApp = create<Store>((set) => ({
     })),
   moveLead: (id, stage) =>
     set((s) => ({ leads: s.leads.map((l) => (l.id === id ? { ...l, stage } : l)) })),
+
+  chatHistory: {
+    "1": [
+      { id: "msg1", text: "Olá! Gostaria de saber mais sobre os serviços.", sender: "lead", time: "10:00" },
+      { id: "msg2", text: "Olá! Tudo bem? Aqui é a Assistente da empresa. Como posso ajudar?", sender: "ia", time: "10:01", status: "read" },
+      { id: "msg3", text: "Qual o valor do produto X?", sender: "lead", time: "10:05" },
+      { id: "msg4", text: "O valor pode variar conforme a necessidade. Você busca para uso pessoal ou empresarial?", sender: "ia", time: "10:06", status: "read" }
+    ]
+  },
+  addMessage: (leadId, msg) => set((s) => ({
+    chatHistory: { ...s.chatHistory, [leadId]: [...(s.chatHistory[leadId] || []), msg] }
+  })),
+  activeChatLeadId: null,
+  setActiveChatLead: (id) => set({ activeChatLeadId: id }),
 }));
 
 export const STAGES: { id: StageId; title: string; description: string; accent: string }[] = [
-  { id: "novo", title: "Novo lead", description: "Leads recém-criados ou importados.", accent: "hsl(200 95% 60%)" },
-  { id: "abordado", title: "Foi abordado", description: "Receberam a primeira abordagem oficial.", accent: "hsl(258 90% 70%)" },
-  { id: "respondeu", title: "Respondeu abordagem", description: "Responderam à abordagem inicial.", accent: "hsl(165 65% 50%)" },
-  { id: "qualificado", title: "Qualificado", description: "Passaram pelos critérios BANT.", accent: "hsl(145 100% 60%)" },
-  { id: "aguardando", title: "Aguardando proposta", description: "Precisam da ação manual do vendedor.", accent: "hsl(38 92% 60%)" },
-  { id: "proposta", title: "Proposta enviada", description: "Receberam uma proposta comercial.", accent: "hsl(280 80% 65%)" },
-  { id: "fechado", title: "Fechado", description: "Clientes que fecharam negócio.", accent: "hsl(145 65% 50%)" },
-  { id: "perdido", title: "Perdido", description: "Leads que não avançaram.", accent: "hsl(0 60% 55%)" },
+  { id: "novo",              title: "Novo Lead",             description: "Leads cadastrados ou importados.",                          accent: "hsl(200 95% 60%)" },
+  { id: "envio",             title: "Envio de Mensagem",     description: "Aguardando envio ou resposta da mensagem oficial.",        accent: "hsl(258 90% 70%)" },
+  { id: "respondeu",         title: "Respondeu Abordagem",   description: "Responderam à mensagem da API Oficial.",                  accent: "hsl(165 65% 50%)" },
+  { id: "atendimento_ia",    title: "Em Atendimento IA",     description: "A IA SDR está conversando com o lead.",                   accent: "hsl(38 92% 60%)" },
+  { id: "qualificado",       title: "Lead Qualificado",      description: "A IA cumpriu o objetivo. Vendedor humano deve assumir.", accent: "hsl(145 100% 60%)" },
+  { id: "atendimento_humano",title: "Atendimento Humano",    description: "Vendedor está atendendo manualmente.",                    accent: "hsl(280 80% 65%)" },
+  { id: "orcamento",         title: "Orçamento Enviado",     description: "Proposta ou orçamento foi enviado.",                      accent: "hsl(30 90% 55%)" },
+  { id: "followup",          title: "Follow-up",             description: "Leads que precisam de acompanhamento.",                   accent: "hsl(50 90% 55%)" },
+  { id: "ganho",             title: "Ganho",                 description: "Venda fechada com sucesso.",                              accent: "hsl(145 65% 50%)" },
+  { id: "perdido",           title: "Perdido",               description: "Oportunidade perdida.",                                   accent: "hsl(0 60% 55%)" },
 ];

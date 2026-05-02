@@ -1,12 +1,14 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { Bot, MessageCircle, ListPlus, Users, KanbanSquare, Sparkles } from "lucide-react";
+import { Bot, MessageCircle, ListPlus, Users, KanbanSquare, Sparkles, MessageSquare, LayoutDashboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const items = [
-  { to: "/configurar-ia", label: "Configurar IA", icon: Bot },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/configurar-ia", label: "Configurar IA de Atendimento", icon: Bot },
   { to: "/whatsapp", label: "Conectar WhatsApp", icon: MessageCircle },
   { to: "/criar-lista", label: "Criar Lista", icon: ListPlus },
   { to: "/contatos", label: "Contatos", icon: Users },
+  { to: "/conversas", label: "Conversas", icon: MessageSquare },
   { to: "/crm", label: "CRM", icon: KanbanSquare },
 ];
 

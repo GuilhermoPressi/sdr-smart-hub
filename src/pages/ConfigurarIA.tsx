@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bot, Building2, Megaphone, Target, Sparkles, CheckCircle2, ArrowRight, Wand2, Briefcase, Users2, Lightbulb, Heart } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
+import {
+  Bot, CheckCircle2, ArrowRight, ArrowLeft, Wand2, Plus, Edit2, Trash2, AlertCircle
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LoadingModal } from "@/components/shared/LoadingModal";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -11,213 +10,246 @@ import { useApp } from "@/store/app";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-const tones = ["Profissional", "Consultivo", "Amigável", "Direto", "Premium"] as const;
-
-const buildPhrases = [
-  "Analisando suas informações...",
-  "Montando a personalidade da IA...",
-  "Criando estratégia de qualificação BANT...",
-  "Preparando abordagem comercial...",
-  "Sua inteligência artificial está sendo construída...",
-];
+import { StepIndicator } from "./configurar-ia/components";
+import { STEPS, BUILD_PHRASES } from "./configurar-ia/constants";
+import { StepEmpresa, StepOferta, StepPersonalidade } from "./configurar-ia/steps-1-3";
+import { StepObjetivo, StepSeguranca } from "./configurar-ia/steps-4-6";
 
 export default function ConfigurarIA() {
   const navigate = useNavigate();
-  const { ai, setAI, markBuilt } = useApp();
+  const { ai, setAI, agents, saveAgent, deleteAgent, resetAI, connections } = useApp();
+  
+  // "list" shows the saved AIs, "wizard" shows the configuration steps
+  const [view, setView] = useState<"list" | "wizard">("list");
+  
+  const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  const summary = useMemo(() => {
-    const name = ai.displayName || ai.internalName || "[Nome da IA]";
-    const company = ai.company || "[Empresa]";
-    const tone = ai.tone.toLowerCase();
-    const product = ai.product || "[produto ou serviço]";
-    return `Você é ${name}, assistente comercial da empresa ${company}. Seu papel é atender leads pelo WhatsApp de forma ${tone}, entender suas necessidades e qualificá-los usando a metodologia BANT.
+  // Step validation
+  const stepValid = [
+    !!(ai.internalName.trim() && ai.company.trim() && ai.segment.trim()),
+    !!ai.product.trim(),
+    !!ai.tone,
+    !!(ai.goalPreset && (ai.goalPreset !== "outro" || ai.goal.trim())),
+    true, // security is all optional
+  ];
 
-Durante a conversa, você deve identificar:
-1. Se o lead possui orçamento ou intenção de investimento.
-2. Se o lead é o tomador de decisão ou influencia a decisão.
-3. Se existe uma necessidade real relacionada a ${product}.
-4. Qual é o prazo ou urgência para resolver o problema.
+  const stepComplete = stepValid.map((v, i) => i < step && v);
 
-Faça uma pergunta por vez, mantenha a conversa natural e encaminhe o lead para o vendedor quando ele atender aos critérios de qualificação.`;
-  }, [ai]);
+  const canProceed = stepValid[step];
+  const isLastStep = step === STEPS.length - 1;
+  const allRequiredFilled = stepValid[0] && stepValid[1] && stepValid[2] && stepValid[3];
 
-  const handleBuild = () => {
-    setLoading(true);
+  const goNext = () => {
+    if (!canProceed) {
+      toast.error("Preencha os campos obrigatórios desta etapa antes de avançar.");
+      return;
+    }
+    if (isLastStep) {
+      if (!allRequiredFilled) {
+        toast.error("Existem campos obrigatórios pendentes em etapas anteriores.");
+        return;
+      }
+      setLoading(true);
+    } else {
+      setStep((s) => Math.min(s + 1, STEPS.length - 1));
+    }
   };
 
-  return (
-    <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-8">
-      <div className="space-y-6">
-        <Group icon={Bot} title="Identidade da IA" description="Como sua IA será conhecida internamente e pelos leads.">
-          <Field label="Nome da IA" hint="Apenas para você identificar internamente.">
-            <Input value={ai.internalName} onChange={(e) => setAI({ internalName: e.target.value })} placeholder="Ex: Sofia, Pedro, Ana Comercial" />
-          </Field>
-          <Field label="Nome que a IA usará no atendimento">
-            <Input value={ai.displayName} onChange={(e) => setAI({ displayName: e.target.value })} placeholder="Ex: Ana, consultora da equipe comercial" />
-          </Field>
-          <Field label="Nome da empresa">
-            <Input value={ai.company} onChange={(e) => setAI({ company: e.target.value })} placeholder="Ex: Clínica Sorriso Premium" />
-          </Field>
-          <Field label="Segmento da empresa">
-            <Input value={ai.segment} onChange={(e) => setAI({ segment: e.target.value })} placeholder="Ex: estética, odontologia, marketing, software, imobiliária" />
-          </Field>
-        </Group>
+  const goBack = () => setStep((s) => Math.max(s - 1, 0));
 
-        <Group icon={Briefcase} title="Oferta" description="O que sua empresa vende e para quem.">
-          <Field label="Produto ou serviço vendido">
-            <Input value={ai.product} onChange={(e) => setAI({ product: e.target.value })} placeholder="Ex: consultoria de tráfego pago para clínicas odontológicas" />
-          </Field>
-          <Field label="Público-alvo">
-            <Input value={ai.audience} onChange={(e) => setAI({ audience: e.target.value })} placeholder="Ex: donos de clínicas odontológicas em São Paulo" />
-          </Field>
-          <Field label="Principal problema que a solução resolve">
-            <Input value={ai.problem} onChange={(e) => setAI({ problem: e.target.value })} placeholder="Ex: falta de pacientes novos todos os meses" />
-          </Field>
-          <Field label="Benefício principal da solução">
-            <Input value={ai.benefit} onChange={(e) => setAI({ benefit: e.target.value })} placeholder="Ex: aumentar o número de agendamentos qualificados" />
-          </Field>
-        </Group>
+  const startNewAI = () => {
+    resetAI();
+    setStep(0);
+    setView("wizard");
+  };
 
-        <Group icon={Megaphone} title="Personalidade" description="Como sua IA deve se comunicar.">
-          <Field label="Tom de voz da IA">
-            <div className="flex flex-wrap gap-2">
-              {tones.map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setAI({ tone: t })}
-                  className={cn(
-                    "px-4 py-2 rounded-xl text-sm font-medium border transition-all duration-200",
-                    ai.tone === t
-                      ? "bg-gradient-primary text-primary-foreground border-transparent shadow-glow"
-                      : "border-border-subtle bg-surface text-foreground hover:border-primary/40",
-                  )}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-          </Field>
-          <Field label="Objetivo da conversa">
-            <Textarea value={ai.goal} onChange={(e) => setAI({ goal: e.target.value })} placeholder="Ex: qualificar o lead e encaminhar para um vendedor quando ele estiver pronto" rows={2} />
-          </Field>
-        </Group>
+  const editAI = (agent: any) => {
+    setAI(agent);
+    setStep(0);
+    setView("wizard");
+  };
 
-        <Group icon={Target} title="Qualificação BANT" description="Como sua IA vai descobrir se o lead está pronto.">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <BantCard
-              icon={Heart}
-              letter="B"
-              title="Budget"
-              question="Como a IA deve descobrir se o lead tem orçamento?"
-              value={ai.bant.budget}
-              onChange={(v) => setAI({ bant: { ...ai.bant, budget: v } })}
-              accent="hsl(165 65% 50%)"
-            />
-            <BantCard
-              icon={Users2}
-              letter="A"
-              title="Authority"
-              question="Como a IA deve identificar se o lead decide a compra?"
-              value={ai.bant.authority}
-              onChange={(v) => setAI({ bant: { ...ai.bant, authority: v } })}
-              accent="hsl(258 90% 70%)"
-            />
-            <BantCard
-              icon={Lightbulb}
-              letter="N"
-              title="Need"
-              question="Como a IA deve entender a necessidade?"
-              value={ai.bant.need}
-              onChange={(v) => setAI({ bant: { ...ai.bant, need: v } })}
-              accent="hsl(38 92% 60%)"
-            />
-            <BantCard
-              icon={Building2}
-              letter="T"
-              title="Timeline"
-              question="Como a IA deve entender a urgência?"
-              value={ai.bant.timeline}
-              onChange={(v) => setAI({ bant: { ...ai.bant, timeline: v } })}
-              accent="hsl(200 95% 60%)"
-            />
+  const handleDelete = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (confirm("Tem certeza que deseja excluir esta IA?")) {
+      deleteAgent(id);
+      toast.success("IA excluída com sucesso.");
+    }
+  };
+
+  // Render the list view
+  if (view === "list") {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-display text-2xl font-semibold">Suas IAs de Atendimento</h2>
+            <p className="text-sm text-muted-foreground mt-1">Gerencie os agentes de IA para cada produto ou serviço.</p>
           </div>
-        </Group>
-
-        <Group icon={CheckCircle2} title="Critérios e instruções" description="Quando o lead é considerado qualificado e regras finais.">
-          <Field label="Critérios para considerar o lead qualificado">
-            <Textarea
-              value={ai.criteria}
-              onChange={(e) => setAI({ criteria: e.target.value })}
-              rows={3}
-              placeholder="Ex: tem orçamento, é decisor ou influencia a decisão, tem necessidade clara e deseja resolver em até 30 dias."
-            />
-          </Field>
-          <Field label="Instruções adicionais para a IA">
-            <Textarea
-              value={ai.instructions}
-              onChange={(e) => setAI({ instructions: e.target.value })}
-              rows={3}
-              placeholder="Ex: não ser insistente, fazer uma pergunta por vez, responder de forma curta e natural."
-            />
-          </Field>
-        </Group>
-
-        <div className="flex justify-end gap-3 pt-2">
-          <Button variant="outline" className="border-border-subtle">Salvar rascunho</Button>
-          <Button
-            onClick={handleBuild}
-            className="bg-gradient-primary text-primary-foreground hover:opacity-95 shadow-glow font-medium"
-            size="lg"
-          >
-            <Wand2 className="h-4 w-4 mr-2" />
-            Construir minha IA
+          <Button onClick={startNewAI} className="bg-gradient-primary text-primary-foreground shadow-glow">
+            <Plus className="h-4 w-4 mr-2" /> Criar Nova IA
           </Button>
+        </div>
+
+        {agents.length === 0 ? (
+          <div className="glass-card rounded-2xl p-12 text-center flex flex-col items-center justify-center border-dashed border-2 border-border-subtle">
+            <div className="h-16 w-16 rounded-full bg-primary/10 grid place-items-center mb-4">
+              <Bot className="h-8 w-8 text-primary" />
+            </div>
+            <h3 className="font-display text-lg font-medium">Nenhuma IA configurada</h3>
+            <p className="text-sm text-muted-foreground mt-2 max-w-sm mb-6">Crie seu primeiro agente de atendimento configurando o produto, persona e objetivo.</p>
+            <Button onClick={startNewAI} variant="outline" className="border-border-subtle">
+              Começar agora
+            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {agents.map(agent => (
+              <div 
+                key={agent.id}
+                className="glass-card rounded-xl p-5 border-border-subtle hover:border-primary/40 transition-colors cursor-pointer group flex flex-col"
+                onClick={() => editAI(agent)}
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className="h-10 w-10 rounded-full bg-gradient-primary grid place-items-center shadow-glow shrink-0">
+                    <Bot className="h-5 w-5 text-primary-foreground" />
+                  </div>
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); editAI(agent); }}
+                      className="p-1.5 text-muted-foreground hover:text-primary transition-colors rounded-md hover:bg-primary/10"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                    <button 
+                      onClick={(e) => handleDelete(e, agent.id)}
+                      className="p-1.5 text-muted-foreground hover:text-destructive transition-colors rounded-md hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                
+                {connections.evolution !== "connected" as any && (
+                  <div className="mb-3 bg-warning/10 border border-warning/20 rounded-md p-2 flex items-start gap-2">
+                    <AlertCircle className="h-3.5 w-3.5 text-warning shrink-0 mt-0.5" />
+                    <p className="text-[10px] text-warning-foreground leading-tight">
+                      A Evolution API não está conectada. Acesse Conectar WhatsApp para ativar.
+                    </p>
+                  </div>
+                )}
+                
+                <h4 className="font-semibold text-sm line-clamp-2 mb-1">{agent.displayName}</h4>
+                <div className="space-y-1.5 mt-auto pt-4 text-xs text-muted-foreground">
+                  <p className="flex justify-between"><span className="opacity-70">Empresa:</span> <span className="font-medium text-foreground">{agent.company || "-"}</span></p>
+                  <p className="flex justify-between"><span className="opacity-70">Produto:</span> <span className="font-medium text-foreground truncate ml-2">{agent.product || "-"}</span></p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Render the wizard view
+  return (
+    <div className="max-w-3xl mx-auto">
+      <div className="flex items-center gap-2 mb-6">
+        <Button variant="ghost" size="sm" onClick={() => setView("list")} className="px-2 -ml-2 text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4 mr-1" /> Voltar para lista
+        </Button>
+      </div>
+
+      <div className="space-y-6">
+        {/* Progress bar */}
+        <StepIndicator
+          steps={STEPS}
+          current={step}
+          status={stepComplete}
+        />
+
+        {/* Step content */}
+        {step === 0 && <StepEmpresa ai={ai} setAI={setAI} />}
+        {step === 1 && <StepOferta ai={ai} setAI={setAI} />}
+        {step === 2 && <StepPersonalidade ai={ai} setAI={setAI} />}
+        {step === 3 && <StepObjetivo ai={ai} setAI={setAI} />}
+        {step === 4 && <StepSeguranca ai={ai} setAI={setAI} />}
+
+        {/* Navigation */}
+        <div className="flex items-center justify-between pt-2">
+          <div>
+            {step > 0 && (
+              <Button variant="outline" onClick={goBack} className="border-border-subtle">
+                <ArrowLeft className="h-4 w-4 mr-2" /> Voltar
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted-foreground">
+              Etapa {step + 1} de {STEPS.length}
+            </span>
+            <div className="relative group">
+              <Button
+                onClick={goNext}
+                disabled={!canProceed && !isLastStep}
+                className={cn(
+                  "font-medium transition-all",
+                  canProceed
+                    ? "bg-gradient-primary text-primary-foreground hover:opacity-95 shadow-glow"
+                    : "bg-muted text-muted-foreground cursor-not-allowed opacity-60",
+                )}
+                size="lg"
+              >
+                {isLastStep ? (
+                  <><Wand2 className="h-4 w-4 mr-2" /> Construir minha IA</>
+                ) : (
+                  <>Próximo <ArrowRight className="h-4 w-4 ml-2" /></>
+                )}
+              </Button>
+              {!canProceed && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-foreground text-background text-[11px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                  Preencha os campos obrigatórios (*)
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Live preview */}
-      <aside className="xl:sticky xl:top-24 self-start space-y-4">
-        <div className="glass-card rounded-2xl p-6 relative overflow-hidden">
-          <div className="absolute -top-20 -right-20 h-48 w-48 rounded-full bg-primary/20 blur-3xl" />
-          <div className="relative">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-10 w-10 rounded-xl bg-gradient-primary grid place-items-center shadow-glow">
-                <Sparkles className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-widest text-muted-foreground">Resumo da IA</p>
-                <p className="font-display font-semibold">{ai.displayName || ai.internalName || "Sua IA SDR"}</p>
-              </div>
-            </div>
-            <div className="rounded-xl bg-background/60 border border-border-subtle p-4 text-sm text-foreground/90 leading-relaxed whitespace-pre-line max-h-[420px] overflow-y-auto">
-              {summary}
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-              <Mini label="Tom" value={ai.tone} />
-              <Mini label="Segmento" value={ai.segment || "—"} />
-              <Mini label="Empresa" value={ai.company || "—"} />
-              <Mini label="Público" value={ai.audience || "—"} />
-            </div>
-          </div>
-        </div>
-      </aside>
-
+      {/* Build modal */}
       <LoadingModal
         open={loading}
-        phrases={buildPhrases}
+        phrases={BUILD_PHRASES}
         durationMs={4500}
-        title="Construindo sua IA SDR"
+        title="Construindo sua IA de Atendimento"
         onComplete={() => {
           setLoading(false);
-          markBuilt();
+          
+          // Generate ID if it doesn't have one
+          const agentId = ai.id || `ai_${Date.now()}`;
+          
+          // Generate Display Name
+          const generatedName = `${ai.internalName} + ${ai.company} + ${ai.product}`;
+          
+          const finalAgent = {
+            ...ai,
+            id: agentId,
+            displayName: generatedName,
+            built: true
+          };
+          
+          setAI(finalAgent); // Update current editing
+          saveAgent(finalAgent); // Save to list
+          
           setSuccess(true);
-          toast.success("IA criada com sucesso");
+          toast.success("IA salva com sucesso");
         }}
       />
 
+      {/* Success dialog */}
       <Dialog open={success} onOpenChange={setSuccess}>
         <DialogContent className="glass-card border-border-subtle max-w-md p-8 text-center [&>button]:hidden">
           <div className="flex flex-col items-center space-y-4">
@@ -229,80 +261,22 @@ Faça uma pergunta por vez, mantenha a conversa natural e encaminhe o lead para 
             </div>
             <div>
               <h3 className="font-display text-xl font-semibold">IA criada com sucesso</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                Sua IA SDR está pronta para ser conectada ao WhatsApp.
-              </p>
+              <p className="text-sm text-muted-foreground mt-1">Sua IA de atendimento está salva e pronta.</p>
             </div>
-            <div className="flex gap-2 w-full pt-2">
-              <Button variant="outline" className="flex-1 border-border-subtle" onClick={() => setSuccess(false)}>
-                Editar configurações
+            <div className="flex flex-col gap-2 w-full pt-2">
+              <Button className="w-full bg-gradient-primary text-primary-foreground" onClick={() => { setSuccess(false); setView("list"); }}>
+                Voltar para minhas IAs
               </Button>
-              <Button
-                className="flex-1 bg-gradient-primary text-primary-foreground"
-                onClick={() => { setSuccess(false); navigate("/whatsapp"); }}
-              >
-                Conectar WhatsApp <ArrowRight className="h-4 w-4 ml-1" />
-              </Button>
+              <div className="flex gap-2 w-full">
+                <Button variant="outline" className="flex-1 border-border-subtle" onClick={() => setSuccess(false)}>Editar</Button>
+                <Button variant="outline" className="flex-1 border-border-subtle" onClick={() => { setSuccess(false); navigate("/whatsapp"); }}>
+                  Conectar WhatsApp
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
-
-function Group({ icon: Icon, title, description, children }: { icon: any; title: string; description: string; children: React.ReactNode }) {
-  return (
-    <div className="glass-card rounded-2xl p-6 space-y-4">
-      <div className="flex items-start gap-3">
-        <div className="h-9 w-9 rounded-lg bg-primary/10 grid place-items-center text-primary">
-          <Icon className="h-4 w-4" />
-        </div>
-        <div>
-          <h3 className="font-display font-semibold text-foreground">{title}</h3>
-          <p className="text-xs text-muted-foreground">{description}</p>
-        </div>
-      </div>
-      <div className="space-y-4">{children}</div>
-    </div>
-  );
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-xs font-medium text-foreground/90">{label}</Label>
-      {children}
-      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
-    </div>
-  );
-}
-
-function BantCard({ icon: Icon, letter, title, question, value, onChange, accent }: any) {
-  return (
-    <div className="rounded-xl border border-border-subtle bg-surface/50 p-4 space-y-3">
-      <div className="flex items-center gap-3">
-        <div
-          className="h-9 w-9 rounded-lg grid place-items-center font-display font-bold text-sm"
-          style={{ background: `${accent}22`, color: accent, border: `1px solid ${accent}44` }}
-        >
-          {letter}
-        </div>
-        <div>
-          <p className="font-display font-semibold text-sm">{title}</p>
-          <p className="text-[11px] text-muted-foreground flex items-center gap-1"><Icon className="h-3 w-3" /> {question}</p>
-        </div>
-      </div>
-      <Textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} className="text-xs" />
-    </div>
-  );
-}
-
-function Mini({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-border-subtle bg-background/40 p-2">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p className="text-foreground/90 truncate">{value}</p>
     </div>
   );
 }

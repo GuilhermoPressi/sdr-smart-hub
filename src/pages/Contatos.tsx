@@ -1,35 +1,43 @@
-import { useMemo, useState } from "react";
-import { useApp, StageId } from "@/store/app";
+import { useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useApp, StageId, Lead } from "@/store/app";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { LoadingModal } from "@/components/shared/LoadingModal";
-import { Search, Filter, UserPlus, Tag, Plus, Workflow, X } from "lucide-react";
+import { Search, Filter, UserPlus, Tag, Plus, Workflow, X, Upload, Download, Phone, Mail, MessageCircle } from "lucide-react";
+import { ContactDetailsSheet } from "@/components/shared/ContactDetailsSheet";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 const stageOptions: { id: StageId; label: string }[] = [
-  { id: "novo", label: "Novo lead" },
-  { id: "abordado", label: "Foi abordado" },
-  { id: "respondeu", label: "Respondeu abordagem" },
-  { id: "qualificado", label: "Qualificado" },
-  { id: "aguardando", label: "Aguardando proposta" },
-  { id: "proposta", label: "Proposta enviada" },
-  { id: "fechado", label: "Fechado" },
+  { id: "novo", label: "Novo Lead" },
+  { id: "envio", label: "Envio de Mensagem" },
+  { id: "respondeu", label: "Respondeu Abordagem" },
+  { id: "atendimento_ia", label: "Em Atendimento IA" },
+  { id: "qualificado", label: "Lead Qualificado" },
+  { id: "atendimento_humano", label: "Atendimento Humano" },
+  { id: "orcamento", label: "Orçamento Enviado" },
+  { id: "followup", label: "Follow-up" },
+  { id: "ganho", label: "Ganho" },
   { id: "perdido", label: "Perdido" },
 ];
 
 const phrases = ["Aplicando configurações...", "Atualizando contatos...", "Enviando contatos para o CRM...", "Concluído."];
 
 export default function Contatos() {
-  const { leads, bulkUpdate } = useApp();
+  const { leads, addLeads, bulkUpdate, setActiveChatLead } = useApp();
+  const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
   const [origin, setOrigin] = useState("all");
   const [tag, setTag] = useState("all");
   const [status, setStatus] = useState("all");
+  const [viewingContact, setViewingContact] = useState<Lead | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
 
   const [tagInput, setTagInput] = useState("");
@@ -42,7 +50,7 @@ export default function Contatos() {
 
   const filtered = useMemo(() => {
     return leads.filter((l) => {
-      if (search && !`${l.name} ${l.email} ${l.company}`.toLowerCase().includes(search.toLowerCase())) return false;
+      if (search && !`${l.name} ${l.email} ${l.companyName}`.toLowerCase().includes(search.toLowerCase())) return false;
       if (origin !== "all" && l.origin !== origin) return false;
       if (tag !== "all" && !l.tags.includes(tag)) return false;
       if (status !== "all" && l.status !== status) return false;
@@ -62,6 +70,136 @@ export default function Contatos() {
 
   const apply = () => setLoading(true);
 
+  // ── Export contacts as CSV ──
+  const handleExport = () => {
+    const dataToExport = selected.length > 0
+      ? leads.filter((l) => selected.includes(l.id))
+      : filtered;
+
+    if (dataToExport.length === 0) {
+      toast.error("Nenhum contato para exportar.");
+      return;
+    }
+
+    const headers = ["Nome", "Cargo", "Empresa", "Telefone", "E-mail", "LinkedIn", "Origem", "Tags", "CRM", "Etapa", "Status"];
+    const csvRows = [
+      headers.join(";"),
+      ...dataToExport.map((l) =>
+        [l.name, l.role || "", l.company || "", l.phone, l.email, l.linkedin || "", l.origin, l.tags.join(", "), l.crm, l.stage, l.status]
+          .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+          .join(";")
+      ),
+    ];
+
+    const blob = new Blob(["\uFEFF" + csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `contatos_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`${dataToExport.length} contato(s) exportado(s) com sucesso.`);
+  };
+
+  // ── Import contacts from CSV ──
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const lines = text.split(/\r?\n/).filter((line) => line.trim());
+        if (lines.length < 2) {
+          toast.error("Arquivo vazio ou sem dados.");
+          return;
+        }
+
+        const sep = lines[0].includes(";") ? ";" : ",";
+        const headerRaw = lines[0].split(sep).map((h) => h.replace(/"/g, "").trim().toLowerCase());
+
+        const colMap: Record<string, number> = {};
+        const aliases: Record<string, string[]> = {
+          name: ["nome", "name"],
+          role: ["cargo", "role", "função"],
+          company: ["empresa", "company"],
+          phone: ["telefone", "phone", "celular", "whatsapp"],
+          email: ["e-mail", "email"],
+          linkedin: ["linkedin"],
+          origin: ["origem", "origin"],
+          tags: ["tags", "tag"],
+          crm: ["crm"],
+          stage: ["etapa", "stage"],
+          status: ["status"],
+        };
+
+        for (const [key, names] of Object.entries(aliases)) {
+          const idx = headerRaw.findIndex((h) => names.includes(h));
+          if (idx !== -1) colMap[key] = idx;
+        }
+
+        if (!("name" in colMap) && !("phone" in colMap) && !("email" in colMap)) {
+          toast.error("CSV inválido: precisa ter ao menos coluna Nome, Telefone ou E-mail.");
+          return;
+        }
+
+        const parseLine = (line: string): string[] => {
+          const result: string[] = [];
+          let current = "";
+          let inQuotes = false;
+          for (const char of line) {
+            if (char === '"') { inQuotes = !inQuotes; continue; }
+            if (char === sep && !inQuotes) { result.push(current.trim()); current = ""; continue; }
+            current += char;
+          }
+          result.push(current.trim());
+          return result;
+        };
+
+        const newLeads: Lead[] = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = parseLine(lines[i]);
+          const get = (key: string) => (colMap[key] !== undefined ? cols[colMap[key]] || "" : "");
+
+          const name = get("name");
+          if (!name) continue;
+
+          newLeads.push({
+            id: `import_${Date.now()}_${i}`,
+            name,
+            role: get("role"),
+            company: get("company"),
+            phone: get("phone"),
+            email: get("email"),
+            linkedin: get("linkedin"),
+            origin: get("origin") || "Importação",
+            tags: get("tags") ? get("tags").split(",").map((t) => t.trim()).filter(Boolean) : [],
+            crm: get("crm") || "",
+            stage: (get("stage") as StageId) || "novo",
+            status: get("status") || "Novo",
+            iaStatus: "Importado",
+            temperature: "Frio",
+            lastInteraction: "Agora",
+          });
+        }
+
+        if (newLeads.length === 0) {
+          toast.error("Nenhum contato válido encontrado no arquivo.");
+          return;
+        }
+
+        addLeads(newLeads);
+        toast.success(`${newLeads.length} contato(s) importado(s) com sucesso!`);
+      } catch {
+        toast.error("Erro ao processar o arquivo. Verifique o formato CSV.");
+      }
+    };
+    reader.readAsText(file);
+    // Reset input so same file can be imported again
+    e.target.value = "";
+  };
+
   return (
     <>
       <div className="space-y-5">
@@ -73,6 +211,28 @@ export default function Contatos() {
           <FilterSelect icon label="Origem" value={origin} onChange={setOrigin} options={["all", ...allOrigins]} />
           <FilterSelect label="Tag" value={tag} onChange={setTag} options={["all", ...allTags]} />
           <FilterSelect label="Status" value={status} onChange={setStatus} options={["all", ...allStatuses]} />
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={handleImport}
+          />
+          <Button
+            variant="outline"
+            className="shrink-0"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="h-4 w-4 mr-2" /> Importar
+          </Button>
+          <Button
+            variant="outline"
+            className="shrink-0"
+            onClick={handleExport}
+          >
+            <Download className="h-4 w-4 mr-2" /> Exportar
+          </Button>
           <Button className="bg-gradient-primary text-primary-foreground shrink-0">
             <UserPlus className="h-4 w-4 mr-2" /> Novo contato
           </Button>
@@ -87,15 +247,19 @@ export default function Contatos() {
                     <th className="px-4 py-3 w-10">
                       <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
                     </th>
-                    <Th>Nome</Th><Th>Telefone</Th><Th>E-mail</Th><Th>Origem</Th><Th>Tags</Th><Th>CRM</Th><Th>Etapa</Th><Th>Status</Th>
+                    <Th>Nome</Th><Th>Tags</Th><Th>Status</Th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((l) => {
                     const checked = selected.includes(l.id);
                     return (
-                      <tr key={l.id} className={cn("border-t border-border-subtle transition-colors", checked ? "bg-primary/5" : "hover:bg-surface/40")}>
-                        <td className="px-4 py-3">
+                      <tr 
+                        key={l.id} 
+                        onClick={() => setViewingContact(l)}
+                        className={cn("border-t border-border-subtle transition-colors cursor-pointer", checked ? "bg-primary/5" : "hover:bg-surface/40")}
+                      >
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
                             checked={checked}
                             onCheckedChange={(v) => setSelected(v ? [...selected, l.id] : selected.filter((x) => x !== l.id))}
@@ -103,24 +267,19 @@ export default function Contatos() {
                         </td>
                         <Td>
                           <div className="font-medium text-foreground">{l.name}</div>
-                          <div className="text-[11px] text-muted-foreground">{l.role} • {l.company}</div>
+                          <div className="text-[11px] text-muted-foreground">{l.jobTitle || "Sem cargo"} • {l.companyName || "Sem empresa"}</div>
                         </Td>
-                        <Td className="font-mono text-xs">{l.phone}</Td>
-                        <Td className="text-foreground/80">{l.email}</Td>
-                        <Td><StatusBadge variant="info" dot>{l.origin}</StatusBadge></Td>
                         <Td>
                           {l.tags.length === 0
                             ? <span className="text-muted-foreground text-xs">Sem tag</span>
                             : <div className="flex flex-wrap gap-1">{l.tags.map((t) => <StatusBadge key={t} variant="accent">{t}</StatusBadge>)}</div>}
                         </Td>
-                        <Td className="text-foreground/80">{l.crm}</Td>
-                        <Td><span className="text-foreground/80">{stageOptions.find((s) => s.id === l.stage)?.label}</span></Td>
                         <Td><StatusBadge variant={statusVariant(l.status)} dot>{l.status}</StatusBadge></Td>
                       </tr>
                     );
                   })}
                   {filtered.length === 0 && (
-                    <tr><td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">Nenhum contato encontrado.</td></tr>
+                    <tr><td colSpan={4} className="px-4 py-12 text-center text-sm text-muted-foreground">Nenhum contato encontrado.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -204,6 +363,8 @@ export default function Contatos() {
           setTagInput(""); setFieldName(""); setFieldValue(""); setCrm(""); setPipeline(""); setStage("");
         }}
       />
+
+      <ContactDetailsSheet viewingContact={viewingContact} setViewingContact={setViewingContact} />
     </>
   );
 }
@@ -224,7 +385,7 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
         <SelectValue placeholder={label} />
       </SelectTrigger>
       <SelectContent>
-        {options.map((o) => <SelectItem key={o} value={o}>{o === "all" ? `Todas as ${label.toLowerCase()}s` : o}</SelectItem>)}
+        {options.map((o) => <SelectItem key={o} value={o}>{o === "all" ? label : o}</SelectItem>)}
       </SelectContent>
     </Select>
   );

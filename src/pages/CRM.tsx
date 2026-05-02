@@ -1,18 +1,33 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useDraggable, useDroppable, useSensor, useSensors,
 } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import { useApp, STAGES, StageId, Lead } from "@/store/app";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MessageSquare, Bot, Megaphone, Hand, Linkedin, Tag, Activity, Thermometer, FileText } from "lucide-react";
+import { MessageSquare, Bot, Megaphone, Hand, Linkedin, Tag, Activity, Thermometer, FileText, MoreVertical, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { ContactDetailsSheet } from "@/components/shared/ContactDetailsSheet";
 
 export default function CRM() {
   const { leads, moveLead } = useApp();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const [active, setActive] = useState<Lead | null>(null);
+  const [stageSettings, setStageSettings] = useState<typeof STAGES[number] | null>(null);
+  const [viewingContact, setViewingContact] = useState<Lead | null>(null);
+
+  useEffect(() => {
+    const handleOpenSettings = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      setStageSettings(customEvent.detail);
+    };
+    document.addEventListener('openStageSettings', handleOpenSettings);
+    return () => document.removeEventListener('openStageSettings', handleOpenSettings);
+  }, []);
 
   const onDragStart = (e: DragStartEvent) => {
     const lead = leads.find((l) => l.id === e.active.id);
@@ -34,23 +49,79 @@ export default function CRM() {
   };
 
   return (
-    <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-      <div className="overflow-x-auto pb-4 -mx-6 lg:-mx-10 px-6 lg:px-10">
-        <div className="flex gap-4 min-w-max">
-          {STAGES.map((stage) => (
-            <Column key={stage.id} stage={stage} leads={leads.filter((l) => l.stage === stage.id)} />
-          ))}
+    <>
+      <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+        <div className="overflow-x-auto pb-4 -mx-6 lg:-mx-10 px-6 lg:px-10">
+          <div className="flex gap-4 min-w-max">
+            {STAGES.map((stage) => (
+              <Column 
+                key={stage.id} 
+                stage={stage} 
+                leads={leads.filter((l) => l.stage === stage.id)} 
+                onLeadClick={setViewingContact}
+              />
+            ))}
+          </div>
         </div>
-      </div>
 
-      <DragOverlay>
-        {active && <LeadCard lead={active} dragging />}
+      <DragOverlay dropAnimation={{
+        duration: 250,
+        easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
+      }}>
+        {active && (
+          <div className="w-[296px]">
+            <LeadCard lead={active} dragging />
+          </div>
+        )}
       </DragOverlay>
-    </DndContext>
+
+      <Dialog open={!!stageSettings} onOpenChange={(open) => !open && setStageSettings(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Configurações da Etapa</DialogTitle>
+            <DialogDescription>
+              Ajuste as automações e eventos que ocorrem quando um lead entra na etapa <strong>{stageSettings?.title}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Automação de Entrada</label>
+              <Select defaultValue="none">
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma automação" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nenhuma ação</SelectItem>
+                  <SelectItem value="template">Enviar template da API Oficial</SelectItem>
+                  <SelectItem value="ia">Iniciar Atendimento IA</SelectItem>
+                  <SelectItem value="notify">Notificar Vendedor</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 flex items-start gap-3 text-sm">
+              <Zap className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+              <div className="text-muted-foreground leading-relaxed">
+                As automações e disparos reais estarão disponíveis em breve quando conectarmos a API Oficial e a Evolution API no painel.
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStageSettings(null)}>Cancelar</Button>
+            <Button onClick={() => {
+              toast.success(`Automação para "${stageSettings?.title}" salva com sucesso! (Visual)`);
+              setStageSettings(null);
+            }} className="bg-gradient-primary text-primary-foreground">Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      </DndContext>
+
+      <ContactDetailsSheet viewingContact={viewingContact} setViewingContact={setViewingContact} />
+    </>
   );
 }
 
-function Column({ stage, leads }: { stage: typeof STAGES[number]; leads: Lead[] }) {
+function Column({ stage, leads, onLeadClick }: { stage: typeof STAGES[number]; leads: Lead[], onLeadClick: (l: Lead) => void }) {
   const { isOver, setNodeRef } = useDroppable({ id: stage.id });
   return (
     <div
@@ -60,15 +131,23 @@ function Column({ stage, leads }: { stage: typeof STAGES[number]; leads: Lead[] 
         isOver ? "border-primary/60 bg-primary/5" : "border-border-subtle",
       )}
     >
-      <div className="p-4 border-b border-border-subtle">
+      <div className="p-4 border-b border-border-subtle group">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full" style={{ background: stage.accent }} />
             <h3 className="font-display font-semibold text-sm">{stage.title}</h3>
           </div>
-          <span className="text-xs text-muted-foreground bg-background/50 rounded-full px-2 py-0.5 border border-border-subtle">
-            {leads.length}
-          </span>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-muted-foreground bg-background/50 rounded-full px-2 py-0.5 border border-border-subtle">
+              {leads.length}
+            </span>
+            <button 
+              onClick={() => document.dispatchEvent(new CustomEvent('openStageSettings', { detail: stage }))}
+              className="p-1 rounded-md text-muted-foreground hover:bg-surface-elevated hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </button>
+          </div>
         </div>
         <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{stage.description}</p>
       </div>
@@ -114,7 +193,7 @@ function Column({ stage, leads }: { stage: typeof STAGES[number]; leads: Lead[] 
           accent="hsl(38 92% 60%)"
         />}
 
-        {leads.map((l) => <DraggableLead key={l.id} lead={l} />)}
+        {leads.map((l) => <DraggableLead key={l.id} lead={l} onClick={() => onLeadClick(l)} />)}
         {leads.length === 0 && (
           <div className="rounded-xl border border-dashed border-border-subtle p-6 text-center text-xs text-muted-foreground">
             Arraste leads para esta etapa.
@@ -125,13 +204,15 @@ function Column({ stage, leads }: { stage: typeof STAGES[number]; leads: Lead[] 
   );
 }
 
-function DraggableLead({ lead }: { lead: Lead }) {
+function DraggableLead({ lead, onClick }: { lead: Lead, onClick: () => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: lead.id });
+
   return (
     <div
       ref={setNodeRef}
       {...listeners}
       {...attributes}
+      onClick={onClick}
       className={cn("touch-none", isDragging && "opacity-30")}
     >
       <LeadCard lead={lead} />
