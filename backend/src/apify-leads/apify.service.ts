@@ -318,7 +318,7 @@ export class ApifyService {
     const items = await this.getDatasetItems(datasetId, limit);
     if (items.length === 0) {
       throw new BadRequestException(
-        'Nenhum perfil encontrado. Verifique se a URL do LinkedIn é pública e válida.',
+        'Nenhum dado encontrado para esse perfil. Teste outro perfil público ou use uma URL de empresa do LinkedIn.',
       );
     }
     return items.map((item) => this.normalizeLinkedinProfile(item));
@@ -333,7 +333,7 @@ export class ApifyService {
     const items = await this.getDatasetItems(datasetId, limit);
     if (items.length === 0) {
       throw new BadRequestException(
-        'Nenhum perfil encontrado. Verifique se a URL da empresa no LinkedIn é pública e válida.',
+        'Nenhum dado encontrado para essa empresa. Verifique se a URL da empresa no LinkedIn é pública e válida.',
       );
     }
     return items.map((item) => this.normalizeLinkedinProfile(item));
