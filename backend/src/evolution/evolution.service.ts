@@ -43,24 +43,47 @@ export class EvolutionService {
   }
 
   async getConnectionState(instanceName: string) {
-    const { data } = await this.client.get(
-      `/instance/connectionState/${instanceName}`,
-    );
-    return data;
+    try {
+      const { data } = await this.client.get(
+        `/instance/connectionState/${instanceName}`,
+      );
+      return data;
+    } catch (error) {
+      if (error.response?.status === 404) {
+        return { instance: { state: 'disconnected' } };
+      }
+      throw error;
+    }
   }
 
   async getQrCode(instanceName: string) {
-    const { data } = await this.client.get(
-      `/instance/connect/${instanceName}`,
-    );
-    return data;
+    try {
+      const { data } = await this.client.get(
+        `/instance/connect/${instanceName}`,
+      );
+      return data;
+    } catch (error) {
+      if (error.response?.status === 404) {
+        // If it doesn't exist, try to create it first
+        this.logger.log(`Instância "${instanceName}" não existe para QR, tentando criar...`);
+        return this.createInstance(instanceName);
+      }
+      throw error;
+    }
   }
 
   async deleteInstance(instanceName: string) {
-    const { data } = await this.client.delete(
-      `/instance/delete/${instanceName}`,
-    );
-    return data;
+    try {
+      const { data } = await this.client.delete(
+        `/instance/delete/${instanceName}`,
+      );
+      return data;
+    } catch (error) {
+      if (error.response?.status === 404) {
+        return { message: 'Instance already deleted' };
+      }
+      throw error;
+    }
   }
 
   async listInstances() {

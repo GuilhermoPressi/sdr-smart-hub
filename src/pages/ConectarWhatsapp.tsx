@@ -53,11 +53,16 @@ export default function ConectarWhatsapp() {
       interval = setInterval(async () => {
         try {
           const status = await api.getInstanceStatus(instanceName);
-          if (status.instance.state === 'open' || status.state === 'open') {
+          const state = status?.instance?.state || status?.state;
+          
+          if (state === 'open') {
             setConnection("evolution", "connected" as any);
             setQrCode(null);
             toast.success("WhatsApp conectado com sucesso!");
             clearInterval(interval);
+          } else if (state === 'disconnected' || state === 'close') {
+            // If it disconnected, try to get QR again
+            if (!qrCode) fetchQrCode();
           }
         } catch (e) {
           // ignore
@@ -65,7 +70,7 @@ export default function ConectarWhatsapp() {
       }, 5000);
     }
     return () => clearInterval(interval);
-  }, [connections.evolution]);
+  }, [connections.evolution, qrCode]);
 
   const fetchQrCode = async () => {
     try {
