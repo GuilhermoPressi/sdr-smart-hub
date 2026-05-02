@@ -312,11 +312,14 @@ export class ApifyService {
 
   private async runLinkedinProfiles(urls: string[], limit: number): Promise<NormalizedLead[]> {
     this.logger.log(`LinkedIn mode: PROFILE | ${urls.length} URLs`);
-    const { datasetId } = await this.runActor('harvestapi/linkedin-profile-scraper', {
-      profileUrls: urls.slice(0, limit),
-    });
+    // harvestapi/linkedin-profile-scraper aceita "urls" como campo principal
+    const input = { urls: urls.slice(0, limit) };
+    this.logger.log(`  Input exato: ${JSON.stringify(input)}`);
+    const { runId, datasetId } = await this.runActor('harvestapi/linkedin-profile-scraper', input);
+    this.logger.log(`  Run: ${runId} | Dataset: ${datasetId}`);
     const items = await this.getDatasetItems(datasetId, limit);
     if (items.length === 0) {
+      this.logger.warn(`  Dataset ${datasetId} retornou 0 itens para run ${runId}`);
       throw new BadRequestException(
         'Nenhum dado encontrado para esse perfil. Teste outro perfil público ou use uma URL de empresa do LinkedIn.',
       );
@@ -326,12 +329,13 @@ export class ApifyService {
 
   private async runLinkedinCompany(urls: string[], limit: number): Promise<NormalizedLead[]> {
     this.logger.log(`LinkedIn mode: COMPANY EMPLOYEES | ${urls.length} URLs`);
-    const { datasetId } = await this.runActor('harvestapi/linkedin-company-employees', {
-      currentCompanies: urls,
-      maxItems: limit,
-    });
+    const input = { currentCompanies: urls };
+    this.logger.log(`  Input exato: ${JSON.stringify(input)}`);
+    const { runId, datasetId } = await this.runActor('harvestapi/linkedin-company-employees', input);
+    this.logger.log(`  Run: ${runId} | Dataset: ${datasetId}`);
     const items = await this.getDatasetItems(datasetId, limit);
     if (items.length === 0) {
+      this.logger.warn(`  Dataset ${datasetId} retornou 0 itens para run ${runId}`);
       throw new BadRequestException(
         'Nenhum dado encontrado para essa empresa. Verifique se a URL da empresa no LinkedIn é pública e válida.',
       );
