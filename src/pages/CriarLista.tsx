@@ -3,23 +3,48 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { api, SearchLeadsResponse, ApifyLeadSearch, LeadResult } from "@/lib/api";
+import { api, SearchLeadsResponse, ApifyLeadSearch, LeadResult, ImportLeadsResponse } from "@/lib/api";
 import {
   MapPin, Search, Trash2, Sparkles, CheckCircle2, XCircle,
-  Loader2, Info, History, ExternalLink, CheckCheck, Globe, Mail,
+  Loader2, Info, History, ExternalLink, Globe, Mail,
+  UserPlus, Download, CheckCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 type SearchState = "idle" | "loading" | "done" | "error";
+type ImportState = "idle" | "loading" | "done";
+
 const LIMITS = [10, 25, 50, 100];
 function formatTime(s: number) { return s < 60 ? `${s.toFixed(0)}s` : `${(s / 60).toFixed(1)}min`; }
+
+// Gera CSV dos leads
+function downloadCSV(leads: LeadResult[], query: string) {
+  const headers = ["Nome", "Telefone", "Telefone Normalizado", "WhatsApp", "E-mail", "Site", "Cidade", "Estado", "Endereço", "Categoria", "Avaliação", "Link Google Maps"];
+  const rows = leads.map((l) => [
+    l.name, l.phone, l.phone_normalized, l.has_whatsapp ? "Sim" : "Não",
+    l.email, l.website, l.city, l.state, l.address, l.category,
+    l.score?.toFixed(1) ?? "", l.profileUrl,
+  ]);
+  const csv = [headers, ...rows]
+    .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `leads_${query.slice(0, 30).replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function CriarLista() {
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(10);
   const [state, setState] = useState<SearchState>("idle");
+  const [importState, setImportState] = useState<ImportState>("idle");
   const [result, setResult] = useState<SearchLeadsResponse | null>(null);
+  const [importResult, setImportResult] = useState<ImportLeadsResponse | null>(null);
   const [error, setError] = useState("");
   const [history, setHistory] = useState<ApifyLeadSearch[]>([]);
   const [showHistory, setShowHistory] = useState(false);
@@ -27,22 +52,31 @@ export default function CriarLista() {
 
   async function handleSearch() {
     if (!query.trim()) { toast.error("Preencha o que você quer buscar"); return; }
-    setState("loading"); setError(""); setResult(null);
+    setState("loading"); setError(""); setResult(null); setImportResult(null); setImportState("idle");
     try {
       const res = await api.searchLeads({ query: query.trim(), limit });
       setResult(res); setState("done");
-      if (res.totalImported > 0) {
-        toast.success(`${res.totalImported} leads importados`, {
-          description: `${res.totalDuplicates} duplicados · ${formatTime(res.duration)}`,
-        });
-      } else {
-        toast.warning("Nenhum lead novo importado", {
-          description: res.totalFound > 0 ? `${res.totalFound} encontrados, todos já no CRM` : "Tente outro termo",
-        });
-      }
+      toast.success(`${res.totalFound} leads encontrados`, {
+        description: `${formatTime(res.duration)} · Clique em "Criar contatos no CRM" para importar`,
+      });
     } catch (err: any) {
       setState("error"); setError(err.message || "Erro inesperado");
       toast.error("Busca falhou", { description: err.message });
+    }
+  }
+
+  async function handleImport() {
+    if (!result?.searchId) return;
+    setImportState("loading");
+    try {
+      const res = await api.importLeads(result.searchId);
+      setImportResult(res); setImportState("done");
+      toast.success(`${res.totalImported} contatos criados no CRM`, {
+        description: res.totalDuplicates > 0 ? `${res.totalDuplicates} já existiam` : undefined,
+      });
+    } catch (err: any) {
+      setImportState("idle");
+      toast.error("Falha ao importar", { description: err.message });
     }
   }
 
@@ -60,7 +94,7 @@ export default function CriarLista() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-display font-semibold text-lg">Criar Lista de Leads</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Busca empresas no Google Maps · Filtra por telefone · Extrai e-mail do site automaticamente.</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Google Maps · Filtra por telefone · Extrai e-mail do site</p>
         </div>
         <Button variant="outline" size="sm" className="border-border-subtle text-xs gap-2"
           onClick={handleLoadHistory} disabled={loadingHistory}>
@@ -69,7 +103,7 @@ export default function CriarLista() {
         </Button>
       </div>
 
-      {/* Fonte fixa */}
+      {/* Fonte */}
       <div className="glass-card rounded-2xl p-4 flex items-center gap-4 border border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
         <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-primary-glow grid place-items-center shrink-0">
           <MapPin className="h-5 w-5 text-primary-foreground" />
@@ -86,7 +120,7 @@ export default function CriarLista() {
         <div className="flex items-start gap-3 p-3 rounded-xl bg-info/10 border border-info/20">
           <Info className="h-4 w-4 text-info mt-0.5 shrink-0" />
           <p className="text-xs text-info/90">
-            Digite o segmento + cidade. Ex: <strong>"dentistas em Porto Alegre"</strong>, <strong>"clínicas estéticas SP"</strong>, <strong>"academias Curitiba"</strong>
+            Digite o segmento + cidade. Ex: <strong>"dentistas em Porto Alegre"</strong>, <strong>"clínicas estéticas SP"</strong>
           </p>
         </div>
 
@@ -114,7 +148,7 @@ export default function CriarLista() {
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
-            ⏱ {limit <= 10 ? "~1min" : limit <= 25 ? "1–2min" : limit <= 50 ? "2–4min" : "4–8min"} · Apenas leads com telefone são importados
+            ⏱ {limit <= 10 ? "~1min" : limit <= 25 ? "1–2min" : limit <= 50 ? "2–4min" : "4–8min"} · Apenas leads com telefone
           </p>
         </div>
 
@@ -146,6 +180,8 @@ export default function CriarLista() {
       {/* Resultado */}
       {state === "done" && result && (
         <div className="space-y-4 animate-fade-in">
+
+          {/* Card resumo + ações */}
           <div className="glass-card rounded-2xl overflow-hidden">
             <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border-subtle">
               <div className="flex items-center gap-3">
@@ -155,35 +191,68 @@ export default function CriarLista() {
                 <div>
                   <p className="font-display font-semibold">Busca concluída</p>
                   <p className="text-xs text-muted-foreground">
-                    {result.totalFound} com telefone · {result.totalImported} importados · {result.totalDuplicates} duplicados · {formatTime(result.duration)}
+                    {result.totalFound} encontrados com telefone · {formatTime(result.duration)}
                   </p>
                 </div>
               </div>
               <Button variant="outline" size="sm" className="border-border-subtle text-xs"
-                onClick={() => { setState("idle"); setResult(null); }}>
+                onClick={() => { setState("idle"); setResult(null); setImportResult(null); setImportState("idle"); }}>
                 <Trash2 className="h-3 w-3 mr-1.5" /> Nova busca
               </Button>
             </div>
-            <div className="p-5 grid grid-cols-4 gap-4 text-center">
-              {[
-                { label: "Com telefone", value: result.totalFound, color: "text-info" },
-                { label: "Importados", value: result.totalImported, color: "text-success" },
-                { label: "Duplicados", value: result.totalDuplicates, color: "text-warning" },
-                { label: "Tempo", value: formatTime(result.duration), color: "text-primary" },
-              ].map((s) => (
-                <div key={s.label}>
-                  <p className={cn("text-2xl font-display font-bold", s.color)}>{s.value}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
+
+            {/* Stats */}
+            <div className="px-5 py-4 grid grid-cols-3 gap-4 border-b border-border-subtle">
+              <div className="text-center">
+                <p className="text-2xl font-display font-bold text-info">{result.totalFound}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Encontrados</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-display font-bold text-success">
+                  {importResult?.totalImported ?? "—"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">Criados no CRM</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-display font-bold text-warning">
+                  {importResult?.totalDuplicates ?? "—"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">Duplicados</p>
+              </div>
+            </div>
+
+            {/* Botões de ação */}
+            <div className="p-4 flex flex-col sm:flex-row gap-3">
+              {importState === "done" ? (
+                <div className="flex items-center gap-2 text-success text-sm font-medium flex-1 justify-center">
+                  <CheckCheck className="h-4 w-4" />
+                  {importResult?.totalImported} contatos criados no CRM
                 </div>
-              ))}
+              ) : (
+                <Button
+                  onClick={handleImport}
+                  disabled={importState === "loading"}
+                  className="flex-1 bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold">
+                  {importState === "loading"
+                    ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Criando contatos...</>
+                    : <><UserPlus className="h-4 w-4 mr-2" />Criar contatos no CRM</>}
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                onClick={() => downloadCSV(result.results, result.query)}
+                className="border-border-subtle gap-2">
+                <Download className="h-4 w-4" /> Baixar planilha
+              </Button>
             </div>
           </div>
 
-          {result.results?.length > 0 && (
+          {/* Tabela */}
+          {result.results.length > 0 && (
             <div className="glass-card rounded-2xl overflow-hidden">
               <div className="p-4 border-b border-border-subtle">
-                <p className="font-semibold text-sm">Leads ({result.results.length})</p>
-                <p className="text-xs text-muted-foreground">📱 = possível WhatsApp · Verde = importado · Amarelo = já existia no CRM</p>
+                <p className="font-semibold text-sm">Leads encontrados ({result.results.length})</p>
+                <p className="text-xs text-muted-foreground">📱 = possível WhatsApp · Clique em "Criar contatos no CRM" para importar</p>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -195,16 +264,12 @@ export default function CriarLista() {
                       <Th>E-mail</Th>
                       <Th>Site</Th>
                       <Th>Localização</Th>
-                      <Th>Status</Th>
-                      <Th>Link</Th>
+                      <Th>Maps</Th>
                     </tr>
                   </thead>
                   <tbody>
                     {result.results.map((lead, i) => (
-                      <tr key={i} className={cn(
-                        "border-t border-border-subtle transition-colors",
-                        lead.imported ? "hover:bg-success/5" : lead.duplicate ? "hover:bg-warning/5 opacity-60" : "hover:bg-surface/40",
-                      )}>
+                      <tr key={i} className="border-t border-border-subtle hover:bg-surface/40 transition-colors">
                         <Td>
                           <p className="font-medium text-xs">{lead.name || "—"}</p>
                           {lead.category && <p className="text-[10px] text-muted-foreground">{lead.category}</p>}
@@ -236,19 +301,10 @@ export default function CriarLista() {
                           {[lead.city, lead.state].filter(Boolean).join(", ") || "—"}
                         </Td>
                         <Td>
-                          {lead.imported
-                            ? <StatusBadge variant="success" dot className="text-[10px]">
-                                <CheckCheck className="h-3 w-3 mr-1" />Importado
-                              </StatusBadge>
-                            : lead.duplicate
-                              ? <StatusBadge variant="warning" dot className="text-[10px]">Duplicado</StatusBadge>
-                              : <StatusBadge variant="info" dot className="text-[10px]">Ignorado</StatusBadge>}
-                        </Td>
-                        <Td>
                           {lead.profileUrl
                             ? <a href={lead.profileUrl} target="_blank" rel="noreferrer"
                                 className="text-info text-xs hover:underline flex items-center gap-1">
-                                <ExternalLink className="h-3 w-3" /> Maps
+                                <ExternalLink className="h-3 w-3" /> Ver
                               </a>
                             : "—"}
                         </Td>
@@ -296,7 +352,7 @@ export default function CriarLista() {
                     </div>
                     <div className="flex items-center gap-3 text-xs shrink-0">
                       <span className="text-info">{h.totalFound} encontrados</span>
-                      <span className="text-success">{h.totalImported} importados</span>
+                      <span className="text-success">{h.totalImported} no CRM</span>
                       <StatusBadge variant={h.status === "completed" ? "success" : h.status === "failed" ? "destructive" : "warning"} dot>
                         {h.status === "completed" ? "OK" : h.status === "failed" ? "Erro" : "Processando"}
                       </StatusBadge>
@@ -315,4 +371,13 @@ function Th({ children }: { children: React.ReactNode }) {
 }
 function Td({ children, className }: { children: React.ReactNode; className?: string }) {
   return <td className={cn("px-4 py-3 align-top", className)}>{children}</td>;
+}
+
+// Info icon inline
+function Info({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+    </svg>
+  );
 }

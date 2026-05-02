@@ -1,47 +1,26 @@
 const API_BASE_URL = (import.meta.env.VITE_BACKEND_URL || 'https://api.sdr.grupogpressi.com.br').replace(/\/$/, '');
 
-export interface SearchLeadsPayload {
-  query: string;
-  limit: number;
-}
+export interface SearchLeadsPayload { query: string; limit: number; }
 
 export interface LeadResult {
-  name: string;
-  phone: string;
-  phone_normalized: string;
-  has_whatsapp: boolean;
-  email: string;
-  website: string;
-  city: string;
-  state: string;
-  address: string;
-  category: string;
-  score: number | null;
-  reviewsCount: number | null;
-  profileUrl: string;
-  imported: boolean;
-  duplicate: boolean;
+  name: string; phone: string; phone_normalized: string; has_whatsapp: boolean;
+  email: string; website: string; city: string; state: string; address: string;
+  category: string; score: number | null; reviewsCount: number | null; profileUrl: string;
 }
 
 export interface SearchLeadsResponse {
-  searchId: string;
-  query: string;
-  totalFound: number;
-  totalImported: number;
-  totalDuplicates: number;
-  duration: number;
+  searchId: string; query: string; totalFound: number;
+  totalImported: number; totalDuplicates: number; duration: number;
   results: LeadResult[];
 }
 
+export interface ImportLeadsResponse {
+  searchId: string; totalImported: number; totalDuplicates: number;
+}
+
 export interface ApifyLeadSearch {
-  id: string;
-  source: string;
-  query: string;
-  status: string;
-  totalFound: number;
-  totalImported: number;
-  error?: string;
-  createdAt: string;
+  id: string; source: string; query: string; status: string;
+  totalFound: number; totalImported: number; error?: string; createdAt: string;
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -61,6 +40,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   searchLeads: (payload: SearchLeadsPayload) =>
     request<SearchLeadsResponse>('/apify-leads/search', { method: 'POST', body: JSON.stringify(payload) }),
+  importLeads: (searchId: string) =>
+    request<ImportLeadsResponse>(`/apify-leads/import/${searchId}`, { method: 'POST' }),
   getSearchHistory: () => request<ApifyLeadSearch[]>('/apify-leads/searches'),
   getSearchById: (id: string) => request<ApifyLeadSearch>(`/apify-leads/searches/${id}`),
 };

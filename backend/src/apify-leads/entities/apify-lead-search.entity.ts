@@ -1,9 +1,4 @@
-import {
-  Entity,
-  Column,
-  PrimaryGeneratedColumn,
-  CreateDateColumn,
-} from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn } from 'typeorm';
 
 export enum SearchStatus {
   PENDING = 'pending',
@@ -29,11 +24,7 @@ export class ApifyLeadSearch {
   @Column()
   query: string;
 
-  @Column({
-    type: 'enum',
-    enum: SearchStatus,
-    default: SearchStatus.PENDING,
-  })
+  @Column({ type: 'enum', enum: SearchStatus, default: SearchStatus.PENDING })
   status: SearchStatus;
 
   @Column({ name: 'total_found', default: 0 })
@@ -47,6 +38,10 @@ export class ApifyLeadSearch {
 
   @Column({ nullable: true, type: 'text' })
   error: string;
+
+  // Leads crus armazenados para importação posterior
+  @Column({ type: 'jsonb', nullable: true })
+  leads: any[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

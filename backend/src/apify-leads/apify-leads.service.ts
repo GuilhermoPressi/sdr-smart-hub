@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ApifyLeadSearch, SearchStatus } from './entities/apify-lead-search.entity';
@@ -18,60 +18,40 @@ export class ApifyLeadsService {
     private apifyService: ApifyService,
   ) {}
 
+  // ── BUSCA: apenas Apify, não salva no CRM ────────────────────────────────
+
   async search(dto: SearchLeadsDto, user: any) {
     const { query, limit } = dto;
     const userId = user?.sub || user?.id || null;
-    const companyId = user?.companyId || null;
     const startTime = Date.now();
 
     this.logger.log(`=== BUSCA: "${query}" | limit: ${limit} ===`);
 
     const record = this.searchRepo.create({
-      userId, companyId, source: 'google', query, status: SearchStatus.RUNNING,
+      userId, source: 'google', query, status: SearchStatus.RUNNING,
     });
     await this.searchRepo.save(record);
 
     try {
       const leads = await this.apifyService.runAndWait(query, limit);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      this.logger.log(`Actor: ${elapsed}s | ${leads.length} leads com telefone`);
+      this.logger.log(`=== BUSCA CONCLUÍDA ${elapsed}s | ${leads.length} leads com telefone ===`);
 
-      const results = await this.processLeads(leads, userId, companyId);
-      const totalImported = results.filter((l) => l.imported).length;
-      const totalDuplicates = results.filter((l) => l.duplicate).length;
-      const totalElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-
-      this.logger.log(`=== CONCLUÍDO ${totalElapsed}s | ${leads.length} encontrados | ${totalImported} importados | ${totalDuplicates} duplicados ===`);
-
+      // Salva leads crus na busca para importação posterior
       record.totalFound = leads.length;
-      record.totalImported = totalImported;
+      record.totalImported = 0;
       record.status = SearchStatus.COMPLETED;
+      record.leads = leads;
       await this.searchRepo.save(record);
 
       return {
         searchId: record.id,
         query,
         totalFound: leads.length,
-        totalImported,
-        totalDuplicates,
-        duration: parseFloat(totalElapsed),
-        results: results.map((l) => ({
-          name: l.name,
-          phone: l.phone,
-          phone_normalized: l.phone_normalized,
-          has_whatsapp: l.has_whatsapp,
-          email: l.email,
-          website: l.website,
-          city: l.city,
-          state: l.state,
-          address: l.address,
-          category: l.category,
-          score: l.score,
-          reviewsCount: l.reviewsCount,
-          profileUrl: l.profileUrl,
-          imported: l.imported,
-          duplicate: l.duplicate,
-        })),
+        totalImported: 0,
+        totalDuplicates: 0,
+        duration: parseFloat(elapsed),
+        results: leads.map((l) => this.serializeLead(l)),
       };
     } catch (err) {
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -83,19 +63,32 @@ export class ApifyLeadsService {
     }
   }
 
-  private async processLeads(leads: NormalizedLead[], userId: string, companyId: string): Promise<NormalizedLead[]> {
-    const seen = new Set<string>();
+  // ── IMPORTAR: salva leads da busca no CRM ────────────────────────────────
 
-    for (const lead of leads) {
+  async importLeads(searchId: string, user: any) {
+    const userId = user?.sub || user?.id || null;
+
+    const record = await this.searchRepo.findOne({ where: { id: searchId } });
+    if (!record) throw new NotFoundException('Busca não encontrada.');
+    if (!record.leads || record.leads.length === 0) {
+      throw new BadRequestException('Nenhum lead disponível para importar nesta busca.');
+    }
+
+    this.logger.log(`=== IMPORTANDO ${record.leads.length} leads da busca ${searchId} ===`);
+    const startTime = Date.now();
+
+    const seen = new Set<string>();
+    let imported = 0;
+    let duplicates = 0;
+
+    for (const lead of record.leads as NormalizedLead[]) {
       const keys = [
         lead.phone_normalized ? `phone:${lead.phone_normalized}` : null,
         lead.email ? `email:${lead.email}` : null,
         lead.profileUrl ? `url:${lead.profileUrl}` : null,
       ].filter(Boolean) as string[];
 
-      if (keys.some((k) => seen.has(k))) {
-        lead.duplicate = true; lead.imported = false; continue;
-      }
+      if (keys.some((k) => seen.has(k))) { duplicates++; continue; }
 
       const conditions: any[] = [];
       if (lead.phone_normalized) conditions.push({ phone: lead.phone_normalized });
@@ -106,9 +99,7 @@ export class ApifyLeadsService {
         ? await this.contactRepo.findOne({ where: conditions })
         : null;
 
-      if (existing) {
-        lead.duplicate = true; lead.imported = false; continue;
-      }
+      if (existing) { duplicates++; continue; }
 
       await this.contactRepo.save(this.contactRepo.create({
         name: lead.name || null,
@@ -121,32 +112,62 @@ export class ApifyLeadsService {
         city: lead.city || null,
         state: lead.state || null,
         category: lead.category || null,
-        source: 'apify',
-        userId, companyId,
+        source: 'google',
+        userId,
         metadata: {
           phone_raw: lead.phone,
           phone_normalized: lead.phone_normalized,
           has_whatsapp: lead.has_whatsapp,
           score: lead.score,
           reviewsCount: lead.reviewsCount,
+          searchId: record.id,
           importedAt: new Date().toISOString(),
-          rawData: lead.rawData,
         },
       }));
 
-      lead.imported = true; lead.duplicate = false;
+      imported++;
       keys.forEach((k) => seen.add(k));
     }
-    return leads;
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    this.logger.log(`=== IMPORTAÇÃO CONCLUÍDA ${elapsed}s | ${imported} criados | ${duplicates} duplicados ===`);
+
+    record.totalImported = imported;
+    await this.searchRepo.save(record);
+
+    return { searchId, totalImported: imported, totalDuplicates: duplicates };
   }
 
   async getSearches(user: any) {
     const userId = user?.sub || user?.id || null;
-    return this.searchRepo.find({ where: { userId }, order: { createdAt: 'DESC' }, take: 50 });
+    return this.searchRepo.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+      take: 50,
+      select: ['id', 'query', 'source', 'status', 'totalFound', 'totalImported', 'error', 'createdAt'],
+    });
   }
 
   async getSearchById(id: string, user: any) {
     const userId = user?.sub || user?.id || null;
     return this.searchRepo.findOne({ where: { id, userId } });
+  }
+
+  private serializeLead(l: NormalizedLead) {
+    return {
+      name: l.name,
+      phone: l.phone,
+      phone_normalized: l.phone_normalized,
+      has_whatsapp: l.has_whatsapp,
+      email: l.email,
+      website: l.website,
+      city: l.city,
+      state: l.state,
+      address: l.address,
+      category: l.category,
+      score: l.score,
+      reviewsCount: l.reviewsCount,
+      profileUrl: l.profileUrl,
+    };
   }
 }

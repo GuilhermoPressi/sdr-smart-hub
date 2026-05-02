@@ -1,12 +1,4 @@
-import {
-  Controller,
-  Post,
-  Get,
-  Param,
-  Body,
-  NotFoundException,
-  Request,
-} from '@nestjs/common';
+import { Controller, Post, Get, Param, Body, NotFoundException, Request } from '@nestjs/common';
 import { ApifyLeadsService } from './apify-leads.service';
 import { SearchLeadsDto } from './dto/search-leads.dto';
 
@@ -15,9 +7,15 @@ export class ApifyLeadsController {
   constructor(private readonly service: ApifyLeadsService) {}
 
   @Post('search')
-  async search(@Body() dto: SearchLeadsDto, @Request() req) {
+  async search(@Body() dto: SearchLeadsDto) {
     const user = { sub: 'public', id: 'public', companyId: null };
     return this.service.search(dto, user);
+  }
+
+  @Post('import/:searchId')
+  async importLeads(@Param('searchId') searchId: string) {
+    const user = { sub: 'public', id: 'public', companyId: null };
+    return this.service.importLeads(searchId, user);
   }
 
   @Get('searches')
