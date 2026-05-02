@@ -74,4 +74,17 @@ export const api = {
     request<ImportLeadsResponse>(`/apify-leads/import/${searchId}`, { method: 'POST' }),
   getSearchHistory: () => request<ApifyLeadSearch[]>('/apify-leads/searches'),
   getSearchById: (id: string) => request<ApifyLeadSearch>(`/apify-leads/searches/${id}`),
+
+  // Contacts & Messages
+  getContacts: () => request<any[]>('/contacts'),
+  getContact: (id: string) => request<any>(`/contacts/${id}`),
+  updateContact: (id: string, data: Record<string, any>) =>
+    request<any>(`/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  getMessages: (contactId: string, limit = 50) =>
+    request<any[]>(`/messages?contactId=${contactId}&limit=${limit}`),
+  sendText: (instanceName: string, phone: string, text: string) =>
+    request<any>('/evolution/send-text', {
+      method: 'POST',
+      body: JSON.stringify({ instanceName, phone, text }),
+    }),
 };

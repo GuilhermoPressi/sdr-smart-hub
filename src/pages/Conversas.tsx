@@ -12,9 +12,11 @@ export default function Conversas() {
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
 
-  // Fetch leads on mount
+  // Busca contatos ao montar e faz polling a cada 5s para atualizações em tempo real
   useEffect(() => {
     fetchLeads();
+    const interval = setInterval(fetchLeads, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   // Fetch messages when a chat is selected

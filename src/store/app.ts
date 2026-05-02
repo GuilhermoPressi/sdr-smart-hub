@@ -216,29 +216,20 @@ export const useApp = create<Store>((set) => ({
     const { api } = await import("@/lib/api");
     try {
       const contacts = await api.getContacts();
-      if (contacts && contacts.length > 0) {
-        set({ leads: contacts.map(c => ({
-          ...c,
-          temperature: c.temperature || "Frio",
-          stage: c.stage || "novo",
-          status: c.status || "Novo",
-          iaStatus: c.iaStatus || "Aguardando",
-          tags: c.tags || [],
-        })) });
-      }
+      set({ leads: (contacts || []).map((c: any) => ({
+        ...c,
+        temperature: c.temperature || "Frio",
+        stage: c.stage || "novo",
+        status: c.status || "Novo",
+        iaStatus: c.iaStatus || "Aguardando",
+        tags: c.tags || [],
+      })) });
     } catch (e) {
       console.error("Failed to fetch leads", e);
     }
   },
 
-  chatHistory: {
-    "1": [
-      { id: "msg1", text: "Olá! Gostaria de saber mais sobre os serviços.", sender: "lead", time: "10:00" },
-      { id: "msg2", text: "Olá! Tudo bem? Aqui é a Assistente da empresa. Como posso ajudar?", sender: "ia", time: "10:01", status: "read" },
-      { id: "msg3", text: "Qual o valor do produto X?", sender: "lead", time: "10:05" },
-      { id: "msg4", text: "O valor pode variar conforme a necessidade. Você busca para uso pessoal ou empresarial?", sender: "ia", time: "10:06", status: "read" }
-    ]
-  },
+  chatHistory: {},
   addMessage: (leadId, msg) => set((s) => ({
     chatHistory: { ...s.chatHistory, [leadId]: [...(s.chatHistory[leadId] || []), msg] }
   })),
