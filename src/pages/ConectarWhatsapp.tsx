@@ -7,7 +7,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { LoadingModal } from "@/components/shared/LoadingModal";
 import { CheckCircle2, MessageCircle, QrCode, ShieldCheck, FileCheck2, Smartphone, RefreshCw, LogOut } from "lucide-react";
 import { toast } from "sonner";
-import { evolutionApi } from "@/lib/api";
+import { api } from "@/lib/api";
 
 const phrases = ["Preparando conexão...", "Gerando ambiente seguro...", "Aguardando QR Code..."];
 
@@ -23,7 +23,7 @@ export default function ConectarWhatsapp() {
   useEffect(() => {
     const checkStatus = async () => {
       try {
-        const instances = await evolutionApi.listInstances();
+        const instances = await api.listInstances();
         const instance = instances.find(i => i.name === instanceName);
         
         if (instance) {
@@ -52,7 +52,7 @@ export default function ConectarWhatsapp() {
     if (connections.evolution === "pending") {
       interval = setInterval(async () => {
         try {
-          const status = await evolutionApi.getInstanceStatus(instanceName);
+          const status = await api.getInstanceStatus(instanceName);
           const state = status?.instance?.state || status?.state;
           
           if (state === 'open') {
@@ -74,7 +74,7 @@ export default function ConectarWhatsapp() {
 
   const fetchQrCode = async () => {
     try {
-      const data = await evolutionApi.getQrCode(instanceName);
+      const data = await api.getQrCode(instanceName);
       // Evolution v2: { qrcode: { base64: "data:image/png;base64,..." } }
       // Evolution v1: { base64: "..." } or { code: "..." }
       const base64 = data?.qrcode?.base64 || data?.base64 || data?.code || null;
@@ -94,7 +94,7 @@ export default function ConectarWhatsapp() {
     setLoadingKey("evolution");
     try {
       // Try to create or just get QR if already exists
-      const created = await evolutionApi.createInstance(instanceName);
+      const created = await api.createInstance(instanceName);
       // Evolution pode retornar QR já no create
       const base64 = created?.qrcode?.base64 || created?.base64;
       if (base64) { const src = base64.startsWith('data:') ? base64 : `data:image/png;base64,${base64}`; setQrCode(src); }
@@ -112,7 +112,7 @@ export default function ConectarWhatsapp() {
   const handleDisconnect = async () => {
     if (!confirm("Deseja realmente desconectar? A instância será removida.")) return;
     try {
-      await evolutionApi.deleteInstance(instanceName);
+      await api.deleteInstance(instanceName);
       setConnection("evolution", "disconnected");
       setQrCode(null);
       toast.success("Desconectado com sucesso.");

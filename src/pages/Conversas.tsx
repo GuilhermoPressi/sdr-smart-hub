@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Search, Send, Bot, User, Phone, Check, CheckCheck, ArrowLeft, PauseCircle, PlayCircle, MessageSquare } from "lucide-react";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 
 export default function Conversas() {
   const { leads, chatHistory, addMessage, activeChatLeadId, setActiveChatLead, updateLead, fetchLeads, fetchMessages } = useApp();
@@ -59,7 +60,6 @@ export default function Conversas() {
       addMessage(activeLead.id, newMessage);
 
       // Envia via API
-      const { api } = await import("@/lib/api");
       await api.sendText("Gpressi", activeLead.phone, text);
       
       // Atualiza mensagens reais

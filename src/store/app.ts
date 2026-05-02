@@ -218,10 +218,16 @@ export const useApp = create<Store>((set) => ({
       const contacts = await api.getContacts();
       set({ leads: (contacts || []).map((c: any) => ({
         ...c,
-        temperature: c.temperature || "Frio",
-        stage: c.stage || "novo",
-        status: c.status || "Novo",
-        iaStatus: c.iaStatus || "Aguardando",
+        name: c.name || c.phone || 'Desconhecido',
+        phone: c.phone || '',
+        email: c.email || '',
+        origin: c.origin || c.source || 'WhatsApp',
+        crm: c.crm || 'Pipeline Comercial',
+        temperature: c.temperature || 'Frio',
+        stage: c.stage || 'novo',
+        status: c.status || 'Novo',
+        iaStatus: c.iaStatus || 'Aguardando',
+        lastInteraction: c.lastInteraction || c.updatedAt || '',
         tags: c.tags || [],
       })) });
     } catch (e) {

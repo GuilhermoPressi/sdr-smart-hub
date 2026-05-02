@@ -11,7 +11,9 @@ export class ContactsService {
   ) {}
 
   findAll() {
-    return this.repo.find({ order: { lastInteraction: 'DESC' } });
+    return this.repo.find({
+      order: { updatedAt: 'DESC' },
+    });
   }
 
   findOne(id: string) {
