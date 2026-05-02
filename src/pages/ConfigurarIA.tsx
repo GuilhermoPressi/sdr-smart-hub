@@ -288,12 +288,15 @@ export default function ConfigurarIA() {
         onComplete={async () => {
           try {
             // Generate Display Name
-            const generatedName = `${ai.internalName} + ${ai.company} + ${ai.product}`;
+            const displayName = ai.displayName || ai.internalName || `${ai.company || "IA"} - ${ai.product || "Atendimento"}`;
+            const internalName = ai.internalName || displayName;
             
             const finalAgent = {
               ...ai,
-              displayName: generatedName,
-              built: true
+              internalName,
+              displayName,
+              built: true,
+              active: false, // começa inativa, usuário ativa manualmente
             };
             
             // Real Save to Backend

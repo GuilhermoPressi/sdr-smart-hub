@@ -12,13 +12,13 @@ export class AiConfig {
   id: string;
 
   /** Internal slug: "NOME_IA - EMPRESA - PRODUTO" */
-  @Column({ name: 'internal_name' })
+  @Column({ name: 'internal_name', nullable: true })
   internalName: string;
 
-  @Column({ name: 'display_name' })
+  @Column({ name: 'display_name', nullable: true })
   displayName: string;
 
-  @Column()
+  @Column({ nullable: true })
   company: string;
 
   @Column({ nullable: true })
