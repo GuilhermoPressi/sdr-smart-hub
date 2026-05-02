@@ -21,14 +21,16 @@ export class EvolutionService {
   // ─── Instance Management ──────────────────────────────────
 
   async createInstance(instanceName: string, webhookUrl?: string) {
+    const finalWebhookUrl = webhookUrl || process.env.WEBHOOK_PUBLIC_URL;
+    
     const { data } = await this.client.post('/instance/create', {
       instanceName,
       integration: 'WHATSAPP-BAILEYS',
       qrcode: true,
       reject_call: false,
-      webhook: webhookUrl
+      webhook: finalWebhookUrl
         ? {
-            url: webhookUrl,
+            url: finalWebhookUrl,
             enabled: true,
             events: [
               'MESSAGES_UPSERT',
@@ -130,9 +132,13 @@ export class EvolutionService {
 
   async setWebhook(instanceName: string, webhookUrl: string, events: string[]) {
     const { data } = await this.client.post(`/webhook/set/${instanceName}`, {
-      enabled: true,
-      url: webhookUrl,
-      events,
+      webhook: {
+        enabled: true,
+        url: webhookUrl,
+        webhookByEvents: false,
+        webhookBase64: false,
+        events,
+      },
     });
     this.logger.log(`Webhook configurado para "${instanceName}" → ${webhookUrl}`);
     return data;

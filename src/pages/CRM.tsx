@@ -14,11 +14,15 @@ import { cn } from "@/lib/utils";
 import { ContactDetailsSheet } from "@/components/shared/ContactDetailsSheet";
 
 export default function CRM() {
-  const { leads, moveLead } = useApp();
+  const { leads, moveLead, fetchLeads } = useApp();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const [active, setActive] = useState<Lead | null>(null);
   const [stageSettings, setStageSettings] = useState<typeof STAGES[number] | null>(null);
   const [viewingContact, setViewingContact] = useState<Lead | null>(null);
+
+  useEffect(() => {
+    fetchLeads();
+  }, []);
 
   useEffect(() => {
     const handleOpenSettings = (e: Event) => {

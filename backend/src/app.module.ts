@@ -5,6 +5,7 @@ import { MessagesModule } from './messages/messages.module';
 import { AiConfigModule } from './ai-config/ai-config.module';
 import { EvolutionModule } from './evolution/evolution.module';
 import { OpenaiModule } from './openai/openai.module';
+import { ContactsModule } from './contacts/contacts.module';
 import { Contact } from './contacts/entities/contact.entity';
 import { ApifyLeadSearch } from './apify-leads/entities/apify-lead-search.entity';
 import { Message } from './messages/entities/message.entity';
@@ -28,6 +29,7 @@ import { AiConfig } from './ai-config/entities/ai-config.entity';
     AiConfigModule,
     EvolutionModule,
     OpenaiModule,
+    ContactsModule,
   ],
 })
 export class AppModule {}

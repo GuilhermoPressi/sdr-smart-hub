@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useApp, Lead } from "@/store/app";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -7,9 +7,27 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { cn } from "@/lib/utils";
 
 export default function Conversas() {
-  const { leads, chatHistory, addMessage, activeChatLeadId, setActiveChatLead, updateLead } = useApp();
+  const { leads, chatHistory, addMessage, activeChatLeadId, setActiveChatLead, updateLead, fetchLeads, fetchMessages } = useApp();
   const [search, setSearch] = useState("");
   const [inputValue, setInputValue] = useState("");
+  const [isSending, setIsSending] = useState(false);
+
+  // Fetch leads on mount
+  useEffect(() => {
+    fetchLeads();
+  }, []);
+
+  // Fetch messages when a chat is selected
+  useEffect(() => {
+    if (activeChatLeadId) {
+      fetchMessages(activeChatLeadId);
+      // Opcional: implementar um polling aqui para atualizar as mensagens periodicamente
+      const interval = setInterval(() => {
+        fetchMessages(activeChatLeadId);
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [activeChatLeadId]);
 
   const activeLead = leads.find(l => l.id === activeChatLeadId) || null;
   const messages = activeChatLeadId ? chatHistory[activeChatLeadId] || [] : [];
@@ -19,22 +37,37 @@ export default function Conversas() {
     l.phone.includes(search)
   );
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || !activeLead || isSending) return;
 
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      text: inputValue,
-      sender: "human",
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      status: "sent"
-    };
-
-    if (activeLead) {
-      addMessage(activeLead.id, newMessage);
-    }
+    const text = inputValue;
     setInputValue("");
+    setIsSending(true);
+
+    try {
+      // Temporariamente adiciona no UI para ser rápido
+      const newMessage: Message = {
+        id: Date.now().toString(),
+        text: text,
+        sender: "human",
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        status: "sent"
+      };
+      addMessage(activeLead.id, newMessage);
+
+      // Envia via API
+      const { api } = await import("@/lib/api");
+      await api.sendText("Gpressi", activeLead.phone, text);
+      
+      // Atualiza mensagens reais
+      await fetchMessages(activeLead.id);
+    } catch (error) {
+      console.error("Erro ao enviar mensagem:", error);
+      // ideally add a toast here
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
@@ -171,7 +204,7 @@ export default function Conversas() {
                 placeholder="Digite sua mensagem (você assume o controle da IA)..." 
                 className="flex-1 bg-background"
               />
-              <Button type="submit" disabled={!inputValue.trim()} className="bg-gradient-primary text-primary-foreground shrink-0">
+              <Button type="submit" disabled={!inputValue.trim() || isSending} className="bg-gradient-primary text-primary-foreground shrink-0">
                 <Send className="h-4 w-4" />
               </Button>
             </form>

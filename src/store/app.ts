@@ -113,9 +113,11 @@ interface Store {
   updateLead: (id: string, patch: Partial<Lead>) => void;
   bulkUpdate: (ids: string[], patch: Partial<Lead>) => void;
   moveLead: (id: string, stage: StageId) => void;
+  fetchLeads: () => Promise<void>;
 
   chatHistory: Record<string, Message[]>;
   addMessage: (leadId: string, msg: Message) => void;
+  fetchMessages: (leadId: string) => Promise<void>;
   activeChatLeadId: string | null;
   setActiveChatLead: (id: string | null) => void;
 }
@@ -340,8 +342,12 @@ export const useApp = create<Store>((set) => ({
 
   leads: seedLeads,
   addLeads: (leads) => set((s) => ({ leads: [...leads, ...s.leads] })),
-  updateLead: (id, patch) =>
-    set((s) => ({ leads: s.leads.map((l) => (l.id === id ? { ...l, ...patch } : l)) })),
+  updateLead: (id, patch) => {
+    set((s) => ({ leads: s.leads.map((l) => (l.id === id ? { ...l, ...patch } : l)) }));
+    import("@/lib/api").then(({ api }) => {
+      api.updateContact(id, patch).catch(console.error);
+    });
+  },
   bulkUpdate: (ids, patch) =>
     set((s) => ({
       leads: s.leads.map((l) =>
@@ -350,8 +356,30 @@ export const useApp = create<Store>((set) => ({
           : l,
       ),
     })),
-  moveLead: (id, stage) =>
-    set((s) => ({ leads: s.leads.map((l) => (l.id === id ? { ...l, stage } : l)) })),
+  moveLead: (id, stage) => {
+    set((s) => ({ leads: s.leads.map((l) => (l.id === id ? { ...l, stage } : l)) }));
+    import("@/lib/api").then(({ api }) => {
+      api.updateContact(id, { stage }).catch(console.error);
+    });
+  },
+  fetchLeads: async () => {
+    const { api } = await import("@/lib/api");
+    try {
+      const contacts = await api.getContacts();
+      if (contacts && contacts.length > 0) {
+        set({ leads: contacts.map(c => ({
+          ...c,
+          temperature: c.temperature || "Frio",
+          stage: c.stage || "novo",
+          status: c.status || "Novo",
+          iaStatus: c.iaStatus || "Aguardando",
+          tags: c.tags || [],
+        })) });
+      }
+    } catch (e) {
+      console.error("Failed to fetch leads", e);
+    }
+  },
 
   chatHistory: {
     "1": [
@@ -364,6 +392,28 @@ export const useApp = create<Store>((set) => ({
   addMessage: (leadId, msg) => set((s) => ({
     chatHistory: { ...s.chatHistory, [leadId]: [...(s.chatHistory[leadId] || []), msg] }
   })),
+  fetchMessages: async (leadId) => {
+    const { api } = await import("@/lib/api");
+    try {
+      const msgs = await api.getMessages(leadId);
+      if (msgs && msgs.length > 0) {
+        set((s) => ({
+          chatHistory: {
+            ...s.chatHistory,
+            [leadId]: msgs.map((m: any) => ({
+              id: m.id,
+              text: m.text,
+              sender: m.sender,
+              time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              status: m.status,
+            }))
+          }
+        }));
+      }
+    } catch (e) {
+      console.error("Failed to fetch messages", e);
+    }
+  },
   activeChatLeadId: null,
   setActiveChatLead: (id) => set({ activeChatLeadId: id }),
 }));
