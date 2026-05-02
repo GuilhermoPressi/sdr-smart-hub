@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp, StageId, Lead } from "@/store/app";
 import { Button } from "@/components/ui/button";
@@ -30,8 +30,16 @@ const stageOptions: { id: StageId; label: string }[] = [
 const phrases = ["Aplicando configurações...", "Atualizando contatos...", "Enviando contatos para o CRM...", "Concluído."];
 
 export default function Contatos() {
-  const { leads, addLeads, bulkUpdate, setActiveChatLead } = useApp();
+  const { leads, addLeads, bulkUpdate, setActiveChatLead, fetchLeads } = useApp();
   const navigate = useNavigate();
+
+  // Busca contatos do backend ao montar e a cada 10s
+  useEffect(() => {
+    fetchLeads();
+    const interval = setInterval(fetchLeads, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
   const [origin, setOrigin] = useState("all");

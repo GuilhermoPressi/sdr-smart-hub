@@ -130,9 +130,13 @@ export default function Conversas() {
 
     try {
       await api.sendText("Gpressi", activeConv.phone, text);
+      // Aguarda 800ms para o backend salvar antes de recarregar
+      await new Promise(r => setTimeout(r, 800));
       await loadMessages(activeConv.id);
     } catch {
       toast.error("Falha ao enviar mensagem");
+      // Remove a mensagem otimista em caso de erro
+      setMessages(prev => prev.filter(m => !m.id.startsWith("temp-")));
     } finally {
       setIsSending(false);
     }

@@ -91,22 +91,37 @@ export class WebhookController {
     }
 
     // Find or create contact
-    let contact = await this.contactRepo.findOneBy({ phone });
+    // Busca por variações do telefone (com ou sem 55)
+    let contact = await this.contactRepo.findOne({
+      where: [
+        { phone },
+        { phone: phone.startsWith('55') ? phone.slice(2) : `55${phone}` },
+      ],
+    });
+
     if (!contact) {
       contact = this.contactRepo.create({
         phone,
         name: data.pushName || phone,
         source: 'whatsapp',
-        origin: 'WhatsApp',
+        origin: 'WhatsApp Evolution',
         stage: 'respondeu',
-        iaStatus: 'Em qualificação',
+        iaStatus: 'Aguardando',
         temperature: 'Morno',
-        status: 'Em conversa',
+        status: 'Novo Lead',
         crm: 'Pipeline Comercial',
-        tags: [],
+        tags: ['whatsapp'],
+        lastInteraction: new Date(),
       });
       contact = await this.contactRepo.save(contact);
-      this.logger.log(`Novo contato criado: ${contact.name} (${phone})`);
+      this.logger.log(`✅ Novo contato criado: ${contact.name} (${phone})`);
+    } else {
+      // Atualiza nome se não tinha
+      const updates: any = { lastInteraction: new Date() };
+      if (!contact.name || contact.name === contact.phone) {
+        updates.name = data.pushName || contact.name;
+      }
+      await this.contactRepo.update(contact.id, updates);
     }
 
     // Save incoming message
