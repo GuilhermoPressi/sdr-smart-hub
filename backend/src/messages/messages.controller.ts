@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query } from '@nestjs/common';
 import { MessagesService } from './messages.service';
 
 @Controller('messages')
@@ -12,5 +12,10 @@ export class MessagesController {
   ) {
     const take = limit ? parseInt(limit, 10) : 50;
     return this.messagesService.findByContact(contactId, take);
+  }
+
+  @Post('contact/:contactId/read')
+  markAsRead(@Param('contactId') contactId: string) {
+    return this.messagesService.markAsRead(contactId);
   }
 }

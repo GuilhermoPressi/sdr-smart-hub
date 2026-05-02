@@ -54,6 +54,8 @@ export const api = {
 
   // Contacts
   getContacts: () => request<any[]>('/contacts'),
+  getConversations: () => request<any[]>('/contacts/conversations'),
+  markAsRead: (contactId: string) => request<any>(`/messages/contact/${contactId}/read`, { method: 'POST' }),
   getContact: (id: string) => request<any>(`/contacts/${id}`),
   updateContact: (id: string, data: Record<string, any>) =>
     request<any>(`/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),

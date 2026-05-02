@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Body, Patch } from '@nestjs/common';
+import { Controller, Get, Param, Patch, Body } from '@nestjs/common';
 import { ContactsService } from './contacts.service';
 
 @Controller('contacts')
@@ -8,6 +8,11 @@ export class ContactsController {
   @Get()
   findAll() {
     return this.contactsService.findAll();
+  }
+
+  @Get('conversations')
+  findConversations() {
+    return this.contactsService.findConversations();
   }
 
   @Get(':id')

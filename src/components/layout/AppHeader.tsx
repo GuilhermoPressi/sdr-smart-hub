@@ -1,5 +1,7 @@
 import { useLocation } from "react-router-dom";
+import { useEffect } from "react";
 import { useApp } from "@/store/app";
+import { api } from "@/lib/api";
 import { Bell, ShieldCheck } from "lucide-react";
 
 const titles: Record<string, { title: string; subtitle: string }> = {
@@ -13,7 +15,27 @@ const titles: Record<string, { title: string; subtitle: string }> = {
 export function AppHeader() {
   const { pathname } = useLocation();
   const meta = titles[pathname] || { title: "LeadFlow", subtitle: "Plataforma SDR" };
-  const { connections, ai } = useApp();
+  const { connections, ai, setConnection } = useApp();
+
+  // Poll Evolution status a cada 15s
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const status = await api.getInstanceStatus("Gpressi");
+        const state = status?.instance?.state || status?.state;
+        if (state === "open") {
+          setConnection("evolution", "connected" as any);
+        } else if (state === "close" || state === "disconnected") {
+          setConnection("evolution", "disconnected");
+        }
+      } catch {
+        // silencioso
+      }
+    };
+    check();
+    const interval = setInterval(check, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <header className="sticky top-0 z-30 border-b border-border-subtle bg-background/70 backdrop-blur-xl">

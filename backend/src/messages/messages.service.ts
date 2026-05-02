@@ -18,6 +18,13 @@ export class MessagesService {
     });
   }
 
+  async markAsRead(contactId: string): Promise<void> {
+    await this.repo.update(
+      { contactId, sender: 'lead', status: 'sent' } as any,
+      { status: 'read' },
+    );
+  }
+
   async create(data: Partial<Message>): Promise<Message> {
     const msg = this.repo.create(data);
     return this.repo.save(msg);
