@@ -22,9 +22,9 @@ export interface NormalizedLead {
   category: string;
   score: number | null;
   reviewsCount: number | null;
-  source: 'google' | 'facebook';
   likes: number | null;
   rating: number | null;
+  source: 'google' | 'facebook';
   imported: boolean;
   duplicate: boolean;
   rawData: Record<string, any>;
@@ -53,14 +53,12 @@ export class ApifyService {
     const urlActorId = actorId.replace('/', '~');
     this.logger.log(`▶ Actor: ${actorId}`);
     this.logger.log(`  Input: ${JSON.stringify(input)}`);
-
     try {
       const res = await client.post(`/acts/${urlActorId}/runs`, input, {
         params: { waitForFinish: 120 },
       });
       const run = res.data?.data;
       this.logger.log(`  Run: ${run?.id} | Status: ${run?.status} | Dataset: ${run?.defaultDatasetId}`);
-
       if (run?.status === 'RUNNING' || run?.status === 'READY') {
         return this.pollRunUntilFinished(run.id, run.defaultDatasetId);
       }
@@ -112,9 +110,7 @@ export class ApifyService {
       });
       const items = Array.isArray(res.data) ? res.data : [];
       this.logger.log(`  ✅ ${items.length} itens`);
-      if (items.length > 0) {
-        this.logger.log(`  CAMPOS[0]: ${Object.keys(items[0]).join(', ')}`);
-      }
+      if (items.length > 0) this.logger.log(`  CAMPOS[0]: ${Object.keys(items[0]).join(', ')}`);
       return items;
     } catch (err) {
       const msg = err?.response?.data?.error?.message || err.message;
@@ -122,41 +118,36 @@ export class ApifyService {
     }
   }
 
-  // ── GOOGLE MAPS ───────────────────────────────────────────────────────────
+  // ── Orquestrador ──────────────────────────────────────────────────────────
 
   async runAndWait(source: LeadSource, query: string, limit: number): Promise<NormalizedLead[]> {
     if (source === LeadSource.FACEBOOK) return this.runFacebook(query, limit);
+    return this.runGoogle(query, limit);
+  }
+
+  // ── GOOGLE MAPS ───────────────────────────────────────────────────────────
+
+  private async runGoogle(query: string, limit: number): Promise<NormalizedLead[]> {
     const { datasetId } = await this.runActor('compass/crawler-google-places', {
       searchStringsArray: [query],
       maxCrawledPlacesPerSearch: limit,
     });
-
     const items = await this.getDatasetItems(datasetId, limit);
-
-    // Filtra apenas itens com telefone
     const withPhone = items.filter((i) => i.phone || i.phoneUnformatted);
     this.logger.log(`  Com telefone: ${withPhone.length}/${items.length}`);
-
     const leads: NormalizedLead[] = [];
     for (const item of withPhone) {
-      const lead = await this.normalizeGoogle(item);
-      leads.push(lead);
+      leads.push(await this.normalizeGoogle(item));
     }
-
     return leads;
   }
 
   private async normalizeGoogle(item: any): Promise<NormalizedLead> {
     const rawPhone = item.phone || item.phoneUnformatted || '';
     const phoneNorm = this.normalizePhone(rawPhone);
-    const hasWhatsapp = phoneNorm.startsWith('55') && phoneNorm.length >= 12;
-
-    // Tenta extrair email do site
+    const hasWhatsapp = phoneNorm.startsWith('55') && phoneNorm.length >= 12 && phoneNorm.length <= 13;
     let email = item.email || '';
-    if (!email && item.website) {
-      email = await this.extractEmailFromWebsite(item.website);
-    }
-
+    if (!email && item.website) email = await this.extractEmailFromWebsite(item.website);
     return {
       name: item.title || item.name || '',
       phone: rawPhone,
@@ -172,28 +163,69 @@ export class ApifyService {
       category: item.categoryName || item.category || '',
       score: item.totalScore ?? null,
       reviewsCount: item.reviewsCount ?? null,
-      source: 'google',
       likes: null,
       rating: null,
+      source: 'google',
       imported: false,
       duplicate: false,
       rawData: item,
     };
   }
 
-  // ── Normalização de telefone ──────────────────────────────────────────────
+  // ── FACEBOOK PAGES ────────────────────────────────────────────────────────
+
+  private async runFacebook(query: string, limit: number): Promise<NormalizedLead[]> {
+    const startUrls = query.startsWith('http')
+      ? [{ url: query }]
+      : [{ url: `https://www.facebook.com/search/pages/?q=${encodeURIComponent(query)}` }];
+    this.logger.log(`Facebook startUrls: ${JSON.stringify(startUrls)}`);
+    const { datasetId } = await this.runActor('apify/facebook-pages-scraper', {
+      startUrls,
+      maxPages: limit,
+    });
+    const items = await this.getDatasetItems(datasetId, limit);
+    const valid = items.filter((i) => i.phone || i.email);
+    this.logger.log(`  Com phone/email: ${valid.length}/${items.length}`);
+    return valid.map((item) => this.normalizeFacebook(item));
+  }
+
+  private normalizeFacebook(item: any): NormalizedLead {
+    const rawPhone = item.phone || item.phoneNumber || '';
+    const phoneNorm = this.normalizePhone(rawPhone);
+    const hasWhatsapp = phoneNorm.startsWith('55') && phoneNorm.length >= 12 && phoneNorm.length <= 13;
+    return {
+      name: item.title || item.name || '',
+      phone: rawPhone,
+      phone_normalized: phoneNorm,
+      has_whatsapp: hasWhatsapp,
+      email: item.email || '',
+      companyName: item.title || item.name || '',
+      website: item.website || '',
+      address: item.address || '',
+      city: item.city || '',
+      state: item.state || '',
+      profileUrl: item.pageUrl || item.url || '',
+      category: Array.isArray(item.categories) ? item.categories.join(', ') : (item.category || ''),
+      score: null,
+      reviewsCount: null,
+      likes: item.likes ?? item.fanCount ?? null,
+      rating: item.rating ?? item.overallStarRating ?? null,
+      source: 'facebook',
+      imported: false,
+      duplicate: false,
+      rawData: item,
+    };
+  }
+
+  // ── Utils ─────────────────────────────────────────────────────────────────
 
   normalizePhone(raw: string): string {
     if (!raw) return '';
-    // Remove tudo que não é dígito
     let digits = raw.replace(/\D/g, '');
-    // Garante prefixo 55 (Brasil)
     if (digits.startsWith('0')) digits = digits.slice(1);
     if (!digits.startsWith('55')) digits = '55' + digits;
     return digits;
   }
-
-  // ── Extração de email do site ─────────────────────────────────────────────
 
   async extractEmailFromWebsite(website: string): Promise<string> {
     try {
@@ -203,36 +235,31 @@ export class ApifyService {
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SDRBot/1.0)' },
         maxRedirects: 3,
       });
-
       const html: string = res.data || '';
       const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
       const matches = html.match(emailRegex) || [];
-
-      // Remove emails de libs/sistemas (noreply, etc)
       const valid = matches.filter((e) =>
-        !e.includes('noreply') &&
-        !e.includes('no-reply') &&
-        !e.includes('@sentry') &&
-        !e.includes('@example') &&
-        !e.includes('.png') &&
-        !e.includes('.jpg') &&
-        !e.includes('.svg') &&
+        !e.includes('noreply') && !e.includes('no-reply') &&
+        !e.includes('@sentry') && !e.includes('@example') &&
+        !e.includes('.png') && !e.includes('.jpg') && !e.includes('.svg') &&
         e.length < 80,
       );
-
       if (valid.length === 0) return '';
-
-      // Prioridade de prefixos de contato
       const priority = ['contato@', 'comercial@', 'atendimento@', 'suporte@', 'vendas@', 'info@'];
       for (const prefix of priority) {
         const found = valid.find((e) => e.toLowerCase().startsWith(prefix));
         if (found) return found.toLowerCase();
       }
-
       return valid[0].toLowerCase();
     } catch (err) {
       this.logger.debug(`Email extraction falhou para ${website}: ${err.message}`);
       return '';
     }
+  }
+
+  extractEmail(text: string): string {
+    if (!text) return '';
+    const match = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+    return match ? match[0].toLowerCase() : '';
   }
 }
