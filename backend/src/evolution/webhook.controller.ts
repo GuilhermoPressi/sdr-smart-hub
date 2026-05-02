@@ -35,23 +35,25 @@ export class WebhookController {
   async handleWebhook(@Body() payload: any) {
     const event = payload?.event;
 
-    if (event === 'connection.update') {
+    if (event === 'CONNECTION_UPDATE' || event === 'connection.update') {
       this.logger.log(`Conexão atualizada: ${JSON.stringify(payload?.data?.state)}`);
       return { received: true };
     }
 
-    if (event !== 'messages.upsert') {
+    if (event !== 'MESSAGES_UPSERT' && event !== 'messages.upsert') {
       return { received: true, ignored: true };
     }
 
-    const data = payload?.data;
+    // Evolution v2 can put message data at different levels
+    const data = payload?.data || payload;
     if (!data) return { received: true, ignored: true };
 
     // Ignore messages sent by us (fromMe)
-    const isFromMe = data.key?.fromMe;
+    const key = data.key || data?.message?.key;
+    const isFromMe = key?.fromMe;
     if (isFromMe) return { received: true, ignored: true };
 
-    const remoteJid = data.key?.remoteJid;
+    const remoteJid = key?.remoteJid;
     if (!remoteJid || remoteJid.includes('@g.us')) {
       // Ignore group messages
       return { received: true, ignored: true };
@@ -59,10 +61,12 @@ export class WebhookController {
 
     // Extract phone number from JID (5511987654321@s.whatsapp.net → 5511987654321)
     const phone = remoteJid.replace('@s.whatsapp.net', '');
-    const text = data.message?.conversation
-      || data.message?.extendedTextMessage?.text
+    const msgBody = data.message || {};
+    const text = msgBody.conversation
+      || msgBody.extendedTextMessage?.text
+      || data.body
       || '';
-    const waMessageId = data.key?.id;
+    const waMessageId = key?.id;
     const instanceName = payload?.instance;
 
     if (!text.trim()) return { received: true, ignored: true };

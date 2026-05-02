@@ -31,9 +31,9 @@ export class EvolutionService {
             url: webhookUrl,
             enabled: true,
             events: [
-              'messages.upsert',
-              'connection.update',
-              'messages.update',
+              'MESSAGES_UPSERT',
+              'CONNECTION_UPDATE',
+              'MESSAGES_UPDATE',
             ],
           }
         : undefined,
