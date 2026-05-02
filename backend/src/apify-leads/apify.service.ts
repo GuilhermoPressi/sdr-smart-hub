@@ -5,25 +5,23 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import axios from 'axios';
-import { LeadSource } from './dto/search-leads.dto';
 
 export interface NormalizedLead {
   name: string;
   phone: string;
+  phone_normalized: string;
+  has_whatsapp: boolean;
   email: string;
   companyName: string;
-  jobTitle: string;
   website: string;
   address: string;
   city: string;
   state: string;
   profileUrl: string;
-  sourceUrl: string;
   category: string;
   score: number | null;
   reviewsCount: number | null;
-  username: string;
-  source: LeadSource;
+  source: 'google';
   imported: boolean;
   duplicate: boolean;
   rawData: Record<string, any>;
@@ -43,35 +41,6 @@ export class ApifyService {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       timeout: 180000,
     });
-  }
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-
-  private resolveInstagramUrl(query: string): string {
-    const q = query.trim();
-    if (q.startsWith('http')) return q;
-    if (q.startsWith('@')) {
-      const user = q.slice(1).replace(/\/$/, '');
-      return `https://www.instagram.com/${user}/`;
-    }
-    const tag = q.replace(/^#/, '').replace(/\s+/g, '');
-    return `https://www.instagram.com/explore/tags/${tag}/`;
-  }
-
-  private resolveLinkedinMode(query: string): 'profile' | 'company' | null {
-    if (query.includes('linkedin.com/in/')) return 'profile';
-    if (query.includes('linkedin.com/company/')) return 'company';
-    return null;
-  }
-
-  private cleanLinkedinUrl(url: string): string {
-    try {
-      const parsed = new URL(url.trim());
-      const path = parsed.pathname.replace(/\/$/, '');
-      return `https://www.linkedin.com${path}`;
-    } catch {
-      return url.trim();
-    }
   }
 
   // ── Actor runner ──────────────────────────────────────────────────────────
@@ -150,247 +119,114 @@ export class ApifyService {
     }
   }
 
-  // ── Orquestrador principal ────────────────────────────────────────────────
+  // ── GOOGLE MAPS ───────────────────────────────────────────────────────────
 
-  async runAndWait(source: LeadSource, query: string, limit: number): Promise<NormalizedLead[]> {
-    switch (source) {
-      case LeadSource.GOOGLE:
-        return this.runGoogle(query, limit);
-      case LeadSource.INSTAGRAM:
-        return this.runInstagram(query, limit);
-      case LeadSource.LINKEDIN:
-        return this.runLinkedin(query, limit);
-      default:
-        throw new BadRequestException(`Source "${source}" não suportado.`);
-    }
-  }
-
-  // ── GOOGLE ────────────────────────────────────────────────────────────────
-
-  private async runGoogle(query: string, limit: number): Promise<NormalizedLead[]> {
+  async runAndWait(query: string, limit: number): Promise<NormalizedLead[]> {
     const { datasetId } = await this.runActor('compass/crawler-google-places', {
       searchStringsArray: [query],
       maxCrawledPlacesPerSearch: limit,
     });
-    const items = await this.getDatasetItems(datasetId, limit);
-    return items.map((item) => this.normalizeGoogle(item));
-  }
-
-  private normalizeGoogle(item: any): NormalizedLead {
-    return {
-      name: item.title || item.name || '',
-      phone: item.phone || item.phoneUnformatted || item.phoneNumber || '',
-      email: item.email || this.extractEmail(item.description) || '',
-      companyName: item.title || item.name || '',
-      jobTitle: '',
-      website: item.website || item.webUrl || '',
-      address: item.address || item.street || '',
-      city: item.city || '',
-      state: item.state || '',
-      profileUrl: item.url || '',
-      sourceUrl: item.url || '',
-      category: item.categoryName || item.category || '',
-      score: item.totalScore ?? null,
-      reviewsCount: item.reviewsCount ?? null,
-      username: '',
-      source: LeadSource.GOOGLE,
-      imported: false,
-      duplicate: false,
-      rawData: item,
-    };
-  }
-
-  // ── INSTAGRAM ─────────────────────────────────────────────────────────────
-
-  private async runInstagram(query: string, limit: number): Promise<NormalizedLead[]> {
-    const url = this.resolveInstagramUrl(query);
-    this.logger.log(`Instagram URL resolvida: ${url}`);
-
-    const { datasetId } = await this.runActor('apify/instagram-scraper', {
-      directUrls: [url],
-      resultsLimit: limit,
-      resultsType: 'posts',
-    });
 
     const items = await this.getDatasetItems(datasetId, limit);
 
-    // Verifica se o actor retornou erros
-    const errorItems = items.filter((i) => i.error || i.errorDescription);
-    if (errorItems.length > 0 && items.length === errorItems.length) {
-      const errMsg = errorItems[0].errorDescription || errorItems[0].error || 'Erro desconhecido do Instagram';
-      throw new BadRequestException(`Instagram retornou erro: ${errMsg}. Tente outra hashtag ou URL.`);
-    }
+    // Filtra apenas itens com telefone
+    const withPhone = items.filter((i) => i.phone || i.phoneUnformatted);
+    this.logger.log(`  Com telefone: ${withPhone.length}/${items.length}`);
 
     const leads: NormalizedLead[] = [];
-    for (const item of items) {
-      if (item.error || item.errorDescription) continue;
-      if (item.ownerUsername) {
-        leads.push(this.normalizeInstagramOwner(item));
-      }
-      if (Array.isArray(item.latestComments)) {
-        for (const comment of item.latestComments) {
-          if (comment.ownerUsername) {
-            leads.push(this.normalizeInstagramComment(comment, item));
-          }
-        }
-      }
+    for (const item of withPhone) {
+      const lead = await this.normalizeGoogle(item);
+      leads.push(lead);
     }
 
     return leads;
   }
 
-  private normalizeInstagramOwner(item: any): NormalizedLead {
+  private async normalizeGoogle(item: any): Promise<NormalizedLead> {
+    const rawPhone = item.phone || item.phoneUnformatted || '';
+    const phoneNorm = this.normalizePhone(rawPhone);
+    const hasWhatsapp = phoneNorm.startsWith('55') && phoneNorm.length >= 12;
+
+    // Tenta extrair email do site
+    let email = item.email || '';
+    if (!email && item.website) {
+      email = await this.extractEmailFromWebsite(item.website);
+    }
+
     return {
-      name: item.ownerFullName || item.ownerUsername || '',
-      phone: '',
-      email: '',
-      companyName: '',
-      jobTitle: '',
-      website: '',
-      address: '',
-      city: '',
-      state: '',
-      profileUrl: `https://instagram.com/${item.ownerUsername}`,
-      sourceUrl: item.url || '',
-      category: 'Instagram profile',
-      score: null,
-      reviewsCount: null,
-      username: item.ownerUsername || '',
-      source: LeadSource.INSTAGRAM,
+      name: item.title || item.name || '',
+      phone: rawPhone,
+      phone_normalized: phoneNorm,
+      has_whatsapp: hasWhatsapp,
+      email,
+      companyName: item.title || item.name || '',
+      website: item.website || '',
+      address: item.address || item.street || '',
+      city: item.city || '',
+      state: item.state || '',
+      profileUrl: item.url || '',
+      category: item.categoryName || item.category || '',
+      score: item.totalScore ?? null,
+      reviewsCount: item.reviewsCount ?? null,
+      source: 'google',
       imported: false,
       duplicate: false,
       rawData: item,
     };
   }
 
-  private normalizeInstagramComment(comment: any, post: any): NormalizedLead {
-    return {
-      name: comment.ownerUsername || '',
-      phone: '',
-      email: '',
-      companyName: '',
-      jobTitle: '',
-      website: '',
-      address: '',
-      city: '',
-      state: '',
-      profileUrl: `https://instagram.com/${comment.ownerUsername}`,
-      sourceUrl: post.url || '',
-      category: 'Instagram commenter',
-      score: null,
-      reviewsCount: null,
-      username: comment.ownerUsername || '',
-      source: LeadSource.INSTAGRAM,
-      imported: false,
-      duplicate: false,
-      rawData: { comment, post },
-    };
+  // ── Normalização de telefone ──────────────────────────────────────────────
+
+  normalizePhone(raw: string): string {
+    if (!raw) return '';
+    // Remove tudo que não é dígito
+    let digits = raw.replace(/\D/g, '');
+    // Garante prefixo 55 (Brasil)
+    if (digits.startsWith('0')) digits = digits.slice(1);
+    if (!digits.startsWith('55')) digits = '55' + digits;
+    return digits;
   }
 
-  // ── LINKEDIN ──────────────────────────────────────────────────────────────
+  // ── Extração de email do site ─────────────────────────────────────────────
 
-  private async runLinkedin(query: string, limit: number): Promise<NormalizedLead[]> {
-    const rawUrls = query.split(/[\n,]+/).map((u) => u.trim()).filter((u) => u.startsWith('http'));
-    if (rawUrls.length === 0) {
-      throw new BadRequestException(
-        'Para LinkedIn, informe URLs de perfis ou empresas. Ex: https://linkedin.com/in/usuario ou https://linkedin.com/company/empresa',
+  async extractEmailFromWebsite(website: string): Promise<string> {
+    try {
+      const url = website.startsWith('http') ? website : `https://${website}`;
+      const res = await axios.get(url, {
+        timeout: 8000,
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SDRBot/1.0)' },
+        maxRedirects: 3,
+      });
+
+      const html: string = res.data || '';
+      const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+      const matches = html.match(emailRegex) || [];
+
+      // Remove emails de libs/sistemas (noreply, etc)
+      const valid = matches.filter((e) =>
+        !e.includes('noreply') &&
+        !e.includes('no-reply') &&
+        !e.includes('@sentry') &&
+        !e.includes('@example') &&
+        !e.includes('.png') &&
+        !e.includes('.jpg') &&
+        !e.includes('.svg') &&
+        e.length < 80,
       );
+
+      if (valid.length === 0) return '';
+
+      // Prioridade de prefixos de contato
+      const priority = ['contato@', 'comercial@', 'atendimento@', 'suporte@', 'vendas@', 'info@'];
+      for (const prefix of priority) {
+        const found = valid.find((e) => e.toLowerCase().startsWith(prefix));
+        if (found) return found.toLowerCase();
+      }
+
+      return valid[0].toLowerCase();
+    } catch (err) {
+      this.logger.debug(`Email extraction falhou para ${website}: ${err.message}`);
+      return '';
     }
-
-    // Limpa query params e fragments de todas as URLs
-    const urls = rawUrls.map((u) => this.cleanLinkedinUrl(u));
-    this.logger.log(`LinkedIn URLs limpas: ${urls.join(', ')}`);
-
-    const mode = this.resolveLinkedinMode(urls[0]);
-
-    if (mode === 'company') {
-      return this.runLinkedinCompany(urls, limit);
-    } else {
-      return this.runLinkedinProfiles(urls, limit);
-    }
-  }
-
-  private async runLinkedinProfiles(urls: string[], limit: number): Promise<NormalizedLead[]> {
-    this.logger.log(`LinkedIn mode: PROFILE | ${urls.length} URLs`);
-    // harvestapi/linkedin-profile-scraper aceita "urls" como campo principal
-    const input = { urls: urls.slice(0, limit) };
-    this.logger.log(`  Input exato: ${JSON.stringify(input)}`);
-    const { runId, datasetId } = await this.runActor('harvestapi/linkedin-profile-scraper', input);
-    this.logger.log(`  Run: ${runId} | Dataset: ${datasetId}`);
-    const items = await this.getDatasetItems(datasetId, limit);
-    if (items.length === 0) {
-      this.logger.warn(`  Dataset ${datasetId} retornou 0 itens para run ${runId}`);
-      throw new BadRequestException(
-        'Nenhum dado encontrado para esse perfil. Teste outro perfil público ou use uma URL de empresa do LinkedIn.',
-      );
-    }
-    return items.map((item) => this.normalizeLinkedinProfile(item));
-  }
-
-  private async runLinkedinCompany(urls: string[], limit: number): Promise<NormalizedLead[]> {
-    this.logger.log(`LinkedIn mode: COMPANY EMPLOYEES | ${urls.length} URLs`);
-    const input = { currentCompanies: urls };
-    this.logger.log(`  Input exato: ${JSON.stringify(input)}`);
-    const { runId, datasetId } = await this.runActor('harvestapi/linkedin-company-employees', input);
-    this.logger.log(`  Run: ${runId} | Dataset: ${datasetId}`);
-    const items = await this.getDatasetItems(datasetId, limit);
-    if (items.length === 0) {
-      this.logger.warn(`  Dataset ${datasetId} retornou 0 itens para run ${runId}`);
-      throw new BadRequestException(
-        'Nenhum dado encontrado para essa empresa. Verifique se a URL da empresa no LinkedIn é pública e válida.',
-      );
-    }
-    return items.map((item) => this.normalizeLinkedinProfile(item));
-  }
-
-  private normalizeLinkedinProfile(item: any): NormalizedLead {
-    const firstName = item.firstName || '';
-    const lastName = item.lastName || '';
-    const fullName = item.fullName || `${firstName} ${lastName}`.trim() || '';
-
-    const currentPosition = Array.isArray(item.currentPosition) ? item.currentPosition[0] : null;
-    const company = currentPosition?.companyName || item.companyName || item.currentCompany || '';
-    const jobTitle = currentPosition?.title || item.headline || item.jobTitle || '';
-
-    const city = item.location?.parsed?.city || item.location?.city || item.city || '';
-    const country = item.location?.parsed?.country || item.location?.country || item.state || '';
-
-    const email = Array.isArray(item.emails) ? item.emails[0] : item.email || '';
-
-    return {
-      name: fullName,
-      phone: item.mobileNumber || item.phone || '',
-      email: typeof email === 'string' ? email : email?.email || '',
-      companyName: company,
-      jobTitle,
-      website: item.companyWebsite || item.website || '',
-      address: item.addressWithoutCountry || item.addressWithCountry || '',
-      city,
-      state: country,
-      profileUrl: item.linkedinUrl || item.linkedinPublicUrl || item.url || '',
-      sourceUrl: item.linkedinUrl || item.linkedinPublicUrl || item.url || '',
-      category: item.companyIndustry || item.industry || '',
-      score: null,
-      reviewsCount: null,
-      username: item.username || '',
-      source: LeadSource.LINKEDIN,
-      imported: false,
-      duplicate: false,
-      rawData: item,
-    };
-  }
-
-  // ── Utils ─────────────────────────────────────────────────────────────────
-
-  extractEmail(text: string): string {
-    if (!text) return '';
-    const match = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-    return match ? match[0].toLowerCase() : '';
-  }
-
-  extractPhone(text: string): string {
-    if (!text) return '';
-    const match = text.match(/(\+55[\s-]?)?(\(?\d{2}\)?[\s-]?)(9?\d{4}[\s-]?\d{4})/);
-    return match ? match[0].replace(/\s/g, '').trim() : '';
   }
 }

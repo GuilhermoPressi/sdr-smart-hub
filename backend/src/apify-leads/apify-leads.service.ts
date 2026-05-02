@@ -19,24 +19,24 @@ export class ApifyLeadsService {
   ) {}
 
   async search(dto: SearchLeadsDto, user: any) {
-    const { source, query, limit } = dto;
+    const { query, limit } = dto;
     const userId = user?.sub || user?.id || null;
     const companyId = user?.companyId || null;
     const startTime = Date.now();
 
-    this.logger.log(`=== BUSCA INICIADA ===`);
-    this.logger.log(`Source: ${source} | Query: "${query}" | Limit: ${limit}`);
+    this.logger.log(`=== BUSCA INICIADA: "${query}" | limit: ${limit} ===`);
 
-    const record = this.searchRepo.create({ userId, companyId, source, query, status: SearchStatus.RUNNING });
+    const record = this.searchRepo.create({
+      userId, companyId, source: 'google', query, status: SearchStatus.RUNNING,
+    });
     await this.searchRepo.save(record);
 
     try {
-      const leads = await this.apifyService.runAndWait(source, query, limit);
+      const leads = await this.apifyService.runAndWait(query, limit);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      this.logger.log(`Actor finalizado em ${elapsed}s | ${leads.length} leads`);
+      this.logger.log(`Actor finalizado em ${elapsed}s | ${leads.length} leads com telefone`);
 
-      // Deduplica e importa
-      const results = await this.processLeads(leads, userId, companyId, source);
+      const results = await this.processLeads(leads, userId, companyId);
 
       const totalImported = results.filter((l) => l.imported).length;
       const totalDuplicates = results.filter((l) => l.duplicate).length;
@@ -44,7 +44,6 @@ export class ApifyLeadsService {
 
       this.logger.log(`=== CONCLUÍDO em ${totalElapsed}s | Encontrados: ${leads.length} | Importados: ${totalImported} | Duplicados: ${totalDuplicates} ===`);
 
-      record.apifyRunId = record.apifyRunId || 'done';
       record.totalFound = leads.length;
       record.totalImported = totalImported;
       record.status = SearchStatus.COMPLETED;
@@ -52,13 +51,28 @@ export class ApifyLeadsService {
 
       return {
         searchId: record.id,
-        source,
         query,
         totalFound: leads.length,
         totalImported,
         totalDuplicates,
         duration: parseFloat(totalElapsed),
-        results,
+        results: results.map((l) => ({
+          name: l.name,
+          phone: l.phone,
+          phone_normalized: l.phone_normalized,
+          has_whatsapp: l.has_whatsapp,
+          email: l.email,
+          website: l.website,
+          address: l.address,
+          city: l.city,
+          state: l.state,
+          category: l.category,
+          score: l.score,
+          reviewsCount: l.reviewsCount,
+          profileUrl: l.profileUrl,
+          imported: l.imported,
+          duplicate: l.duplicate,
+        })),
       };
     } catch (err) {
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -70,22 +84,16 @@ export class ApifyLeadsService {
     }
   }
 
-  private async processLeads(
-    leads: NormalizedLead[],
-    userId: string,
-    companyId: string,
-    source: string,
-  ): Promise<NormalizedLead[]> {
-    const seen = new Set<string>(); // dedup em memória dentro do batch
+  private async processLeads(leads: NormalizedLead[], userId: string, companyId: string): Promise<NormalizedLead[]> {
+    const seen = new Set<string>();
 
     for (const lead of leads) {
-      // Chave de deduplicação em memória
+      // Chaves de deduplicação
       const keys = [
-        lead.phone ? `phone:${lead.phone}` : null,
+        lead.phone_normalized ? `phone:${lead.phone_normalized}` : null,
         lead.email ? `email:${lead.email}` : null,
         lead.profileUrl ? `url:${lead.profileUrl}` : null,
-        lead.username ? `user:${lead.username}:${source}` : null,
-      ].filter(Boolean);
+      ].filter(Boolean) as string[];
 
       const isDupInBatch = keys.some((k) => seen.has(k));
       if (isDupInBatch) {
@@ -94,16 +102,9 @@ export class ApifyLeadsService {
         continue;
       }
 
-      // Sem nenhum identificador — pula
-      if (!lead.phone && !lead.email && !lead.profileUrl && !lead.username) {
-        lead.duplicate = false;
-        lead.imported = false;
-        continue;
-      }
-
       // Verifica duplicado no banco
       const conditions: any[] = [];
-      if (lead.phone) conditions.push({ phone: lead.phone });
+      if (lead.phone_normalized) conditions.push({ phone: lead.phone_normalized });
       if (lead.email) conditions.push({ email: lead.email });
       if (lead.profileUrl) conditions.push({ profileUrl: lead.profileUrl });
 
@@ -119,25 +120,25 @@ export class ApifyLeadsService {
 
       // Salva no CRM
       const contact = this.contactRepo.create({
-        name: lead.name || lead.companyName || lead.username || null,
+        name: lead.name || null,
         companyName: lead.companyName || null,
         email: lead.email || null,
-        phone: lead.phone || null,
+        phone: lead.phone_normalized || lead.phone || null,
         profileUrl: lead.profileUrl || null,
         website: lead.website || null,
         address: lead.address || null,
+        city: lead.city || null,
+        state: lead.state || null,
+        category: lead.category || null,
         source: 'apify',
         userId,
         companyId,
         metadata: {
-          apifySource: lead.source,
-          jobTitle: lead.jobTitle,
-          category: lead.category,
-          city: lead.city,
-          state: lead.state,
+          phone_raw: lead.phone,
+          phone_normalized: lead.phone_normalized,
+          has_whatsapp: lead.has_whatsapp,
           score: lead.score,
           reviewsCount: lead.reviewsCount,
-          username: lead.username,
           importedAt: new Date().toISOString(),
           rawData: lead.rawData,
         },
