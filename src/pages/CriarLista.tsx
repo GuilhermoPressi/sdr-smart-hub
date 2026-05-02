@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { api, SearchLeadsResponse, ApifyLeadSearch, LeadResult } from "@/lib/api";
 import {
-  Linkedin, MapPin, Search, Trash2, Sparkles, Globe, Instagram,
+  Linkedin, MapPin, Search, Trash2, Sparkles, Instagram,
   CheckCircle2, XCircle, Loader2, ChevronRight, Info, History,
   ExternalLink, CheckCheck, Copy,
 } from "lucide-react";
@@ -34,7 +34,7 @@ const SOURCES: {
   {
     id: "instagram", label: "Instagram", icon: Instagram,
     description: "Perfis e comentadores por hashtag ou URL.",
-    hint: 'Ex: hashtag "clinicaestetica" ou URL de post',
+    hint: 'Use hashtag, @usuario ou URL. Ex: corretor, @perfil ou https://instagram.com/explore/tags/corretor/',
     badge: "Disponível", badgeVariant: "info",
   },
   {

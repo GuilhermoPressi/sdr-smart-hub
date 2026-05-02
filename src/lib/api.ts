@@ -1,7 +1,7 @@
 const API_BASE_URL = (import.meta.env.VITE_BACKEND_URL || 'https://api.sdr.grupogpressi.com.br').replace(/\/$/, '');
 
 export interface SearchLeadsPayload {
-  source: 'google' | 'linkedin' | 'instagram' | 'website';
+  source: 'google' | 'linkedin' | 'instagram';
   query: string;
   limit: number;
 }
