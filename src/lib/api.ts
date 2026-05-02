@@ -11,6 +11,7 @@ export interface LeadResult {
 export interface SearchLeadsResponse {
   searchId: string; query: string; totalFound: number;
   totalImported: number; totalDuplicates: number; duration: number;
+  reachedTarget: boolean;
   results: LeadResult[];
 }
 

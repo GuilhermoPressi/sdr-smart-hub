@@ -56,9 +56,15 @@ export default function CriarLista() {
     try {
       const res = await api.searchLeads({ query: query.trim(), limit });
       setResult(res); setState("done");
-      toast.success(`${res.totalFound} leads encontrados`, {
-        description: `${formatTime(res.duration)} · Clique em "Criar contatos no CRM" para importar`,
-      });
+      if (!res.reachedTarget && res.totalFound < limit) {
+        toast.warning(`Encontramos ${res.totalFound} leads disponíveis com telefone`, {
+          description: `Não foi possível encontrar os ${limit} solicitados. Retornamos o máximo disponível.`,
+        });
+      } else {
+        toast.success(`${res.totalFound} leads encontrados`, {
+          description: `${formatTime(res.duration)} · Clique em "Criar contatos no CRM" para importar`,
+        });
+      }
     } catch (err: any) {
       setState("error"); setError(err.message || "Erro inesperado");
       toast.error("Busca falhou", { description: err.message });
@@ -143,12 +149,12 @@ export default function CriarLista() {
                   limit === l
                     ? "bg-gradient-to-r from-primary to-primary-glow text-primary-foreground border-transparent"
                     : "border-border-subtle bg-surface hover:border-primary/40")}>
-                {l}{l === 10 ? <span className="ml-1 text-[10px] opacity-60">teste</span> : l === 100 ? <span className="ml-1 text-[10px] opacity-60">max</span> : ""}
+                Até {l}{l === 10 ? <span className="ml-1 text-[10px] opacity-60">teste</span> : l === 100 ? <span className="ml-1 text-[10px] opacity-60">max</span> : ""}
               </button>
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
-            ⏱ {limit <= 10 ? "~1min" : limit <= 25 ? "1–2min" : limit <= 50 ? "2–4min" : "4–8min"} · Apenas leads com telefone
+            ⏱ {limit <= 10 ? "~1min" : limit <= 25 ? "1–2min" : limit <= 50 ? "2–4min" : "4–8min"} · Busca em múltiplas variações · Apenas leads com telefone
           </p>
         </div>
 
@@ -191,7 +197,7 @@ export default function CriarLista() {
                 <div>
                   <p className="font-display font-semibold">Busca concluída</p>
                   <p className="text-xs text-muted-foreground">
-                    {result.totalFound} encontrados com telefone · {formatTime(result.duration)}
+                    {result.totalFound} leads com telefone · {formatTime(result.duration)}{!result.reachedTarget && result.totalFound < limit ? ' · abaixo do solicitado' : ''}
                   </p>
                 </div>
               </div>

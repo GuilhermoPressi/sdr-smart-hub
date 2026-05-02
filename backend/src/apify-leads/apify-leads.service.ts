@@ -33,7 +33,7 @@ export class ApifyLeadsService {
     await this.searchRepo.save(record);
 
     try {
-      const leads = await this.apifyService.runAndWait(query, limit);
+      const { leads, reachedTarget } = await this.apifyService.runAndWait(query, limit);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
       this.logger.log(`=== BUSCA CONCLUÍDA ${elapsed}s | ${leads.length} leads com telefone ===`);
 
@@ -50,6 +50,7 @@ export class ApifyLeadsService {
         totalFound: leads.length,
         totalImported: 0,
         totalDuplicates: 0,
+        reachedTarget,
         duration: parseFloat(elapsed),
         results: leads.map((l) => this.serializeLead(l)),
       };
