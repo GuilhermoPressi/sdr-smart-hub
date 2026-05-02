@@ -178,3 +178,39 @@
 .conversations-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(255,255,255,0.15);
 }
+
+/* ── Kanban Scroll Container ────────────────────────────────────────── */
+.kanban-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.08) transparent;
+}
+.kanban-scroll::-webkit-scrollbar {
+  height: 5px;
+  width: 5px;
+}
+.kanban-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.kanban-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 99px;
+}
+.kanban-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.2);
+}
+
+/* CRM page — sai do max-w do layout padrão */
+.crm-fullpage {
+  margin-left: -1.5rem;
+  margin-right: -1.5rem;
+  margin-top: -2rem;
+  padding: 0;
+  width: calc(100% + 3rem);
+}
+@media (min-width: 1024px) {
+  .crm-fullpage {
+    margin-left: -2.5rem;
+    margin-right: -2.5rem;
+    width: calc(100% + 5rem);
+  }
+}
