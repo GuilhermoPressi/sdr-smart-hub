@@ -81,7 +81,7 @@ export const api = {
   updateContact: (id: string, data: Record<string, any>) =>
     request<any>(`/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   getMessages: (contactId: string, limit = 50) =>
-    request<any[]>(`/messages?contactId=${contactId}&limit=${limit}`),
+    request<any[]>(`/messages/contact/${contactId}?limit=${limit}`),
   sendText: (instanceName: string, phone: string, text: string) =>
     request<any>('/evolution/send-text', {
       method: 'POST',
