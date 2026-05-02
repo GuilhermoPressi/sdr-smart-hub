@@ -55,12 +55,23 @@ export class WebhookController {
 
     const remoteJid = key?.remoteJid;
     if (!remoteJid || remoteJid.includes('@g.us')) {
-      // Ignore group messages
       return { received: true, ignored: true };
     }
 
-    // Extract phone number from JID (5511987654321@s.whatsapp.net → 5511987654321)
-    const phone = remoteJid.replace('@s.whatsapp.net', '');
+    // LID format (@lid) = novo formato do WhatsApp — usar senderPn como fallback
+    let phone: string;
+    if (remoteJid.includes('@lid')) {
+      const senderPn = key?.senderPn || data?.senderPn || '';
+      phone = senderPn.replace('@s.whatsapp.net', '');
+      this.logger.log(`JID @lid detectado. Usando senderPn: ${senderPn} → phone: ${phone}`);
+    } else {
+      phone = remoteJid.replace('@s.whatsapp.net', '');
+    }
+
+    if (!phone || phone.includes('@')) {
+      this.logger.warn(`Não foi possível extrair telefone do JID: ${remoteJid}`);
+      return { received: true, ignored: true };
+    }
     const msgBody = data.message || {};
     const text = msgBody.conversation
       || msgBody.extendedTextMessage?.text
