@@ -31,6 +31,19 @@ export class AiConfigService {
     return this.repo.save(entity);
   }
 
+  async activate(id: string): Promise<AiConfig> {
+    // Desativa todas as outras
+    await this.repo.update({ active: true }, { active: false });
+    // Ativa esta
+    await this.repo.update(id, { active: true });
+    return this.repo.findOneBy({ id });
+  }
+
+  async deactivate(id: string): Promise<AiConfig> {
+    await this.repo.update(id, { active: false });
+    return this.repo.findOneBy({ id });
+  }
+
   async delete(id: string): Promise<void> {
     await this.repo.delete(id);
   }

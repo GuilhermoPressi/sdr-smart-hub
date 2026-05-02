@@ -52,6 +52,19 @@ export const api = {
   getSearchHistory: () => request<ApifyLeadSearch[]>('/apify-leads/searches'),
   getSearchById: (id: string) => request<ApifyLeadSearch>(`/apify-leads/searches/${id}`),
 
+  // AI Config
+  getAiConfigs: () => request<any[]>('/ai-config'),
+  getActiveAiConfig: () => request<any>('/ai-config/active'),
+  saveAiConfig: (data: any) => data.id
+    ? request<any>(`/ai-config/${data.id}`, { method: 'PUT', body: JSON.stringify(data) })
+    : request<any>('/ai-config', { method: 'POST', body: JSON.stringify(data) }),
+  activateAiConfig: (id: string) =>
+    request<any>(`/ai-config/${id}/activate`, { method: 'PATCH' }),
+  deactivateAiConfig: (id: string) =>
+    request<any>(`/ai-config/${id}/deactivate`, { method: 'PATCH' }),
+  deleteAiConfig: (id: string) =>
+    request<any>(`/ai-config/${id}`, { method: 'DELETE' }),
+
   // Contacts
   getContacts: () => request<any[]>('/contacts'),
   getConversations: () => request<any[]>('/contacts/conversations'),

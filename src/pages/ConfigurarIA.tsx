@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState, useMemo, useState } ;
 import { useNavigate } from "react-router-dom";
 import {
   Bot, CheckCircle2, ArrowRight, ArrowLeft, Wand2, Plus, Edit2, Trash2, AlertCircle
@@ -19,6 +19,8 @@ import { StepObjetivo, StepSeguranca } from "./configurar-ia/steps-4-6";
 export default function ConfigurarIA() {
   const navigate = useNavigate();
   const { ai, setAI, agents, saveAgent, deleteAgent, resetAI, connections } = useApp();
+  const [activeConfigId, setActiveConfigId] = useState<string | null>(null);
+  const [activating, setActivating] = useState<string | null>(null);
   
   // "list" shows the saved AIs, "wizard" shows the configuration steps
   const [view, setView] = useState<"list" | "wizard">("list");
@@ -32,6 +34,9 @@ export default function ConfigurarIA() {
     const loadConfigs = async () => {
       try {
         const configs = await api.getAiConfigs();
+        // Track which one is active
+        const active = configs.find((c: any) => c.active);
+        if (active) setActiveConfigId(active.id);
         if (configs.length > 0) {
           // If we have configs, maybe auto-select one or just show the list
         }
@@ -88,10 +93,31 @@ export default function ConfigurarIA() {
     setView("wizard");
   };
 
+  const handleActivate = async (e: React.MouseEvent, id: string, isActive: boolean) => {
+    e.stopPropagation();
+    setActivating(id);
+    try {
+      if (isActive) {
+        await api.deactivateAiConfig(id);
+        setActiveConfigId(null);
+        toast.success("IA desativada. As mensagens não serão mais respondidas automaticamente.");
+      } else {
+        await api.activateAiConfig(id);
+        setActiveConfigId(id);
+        toast.success("IA ativada! Ela responderá automaticamente às mensagens recebidas.");
+      }
+    } catch {
+      toast.error("Erro ao alterar status da IA.");
+    } finally {
+      setActivating(null);
+    }
+  };
+
   const handleDelete = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (confirm("Tem certeza que deseja excluir esta IA?")) {
       deleteAgent(id);
+      if (activeConfigId === id) setActiveConfigId(null);
       toast.success("IA excluída com sucesso.");
     }
   };
@@ -134,6 +160,17 @@ export default function ConfigurarIA() {
                     <Bot className="h-5 w-5 text-primary-foreground" />
                   </div>
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => handleActivate(e, agent.id, activeConfigId === agent.id)}
+                      disabled={activating === agent.id}
+                      className={cn("p-1.5 transition-colors rounded-md text-xs font-medium flex items-center gap-1",
+                        activeConfigId === agent.id
+                          ? "text-success hover:text-warning hover:bg-warning/10"
+                          : "text-muted-foreground hover:text-success hover:bg-success/10")}
+                      title={activeConfigId === agent.id ? "Desativar IA" : "Ativar IA"}
+                    >
+                      {activating === agent.id ? "..." : activeConfigId === agent.id ? "✓ Ativa" : "Ativar"}
+                    </button>
                     <button 
                       onClick={(e) => { e.stopPropagation(); editAI(agent); }}
                       className="p-1.5 text-muted-foreground hover:text-primary transition-colors rounded-md hover:bg-primary/10"
@@ -158,6 +195,12 @@ export default function ConfigurarIA() {
                   </div>
                 )}
                 
+                {activeConfigId === agent.id && (
+                  <div className="mb-2 flex items-center gap-1.5 text-xs text-success font-medium">
+                    <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
+                    IA Ativa — respondendo automaticamente
+                  </div>
+                )}
                 <h4 className="font-semibold text-sm line-clamp-2 mb-1">{agent.displayName}</h4>
                 <div className="space-y-1.5 mt-auto pt-4 text-xs text-muted-foreground">
                   <p className="flex justify-between"><span className="opacity-70">Empresa:</span> <span className="font-medium text-foreground">{agent.company || "-"}</span></p>

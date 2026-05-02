@@ -105,10 +105,10 @@ export class WebhookController {
         name: data.pushName || phone,
         source: 'whatsapp',
         origin: 'WhatsApp Evolution',
-        stage: 'respondeu',
-        iaStatus: 'Aguardando',
+        stage: 'atendimento_ia',   // Já entra direto no atendimento da IA
+        iaStatus: 'Em qualificação',
         temperature: 'Morno',
-        status: 'Novo Lead',
+        status: 'Em conversa',
         crm: 'Pipeline Comercial',
         tags: ['whatsapp'],
         lastInteraction: new Date(),
@@ -116,12 +116,18 @@ export class WebhookController {
       contact = await this.contactRepo.save(contact);
       this.logger.log(`✅ Novo contato criado: ${contact.name} (${phone})`);
     } else {
-      // Atualiza nome se não tinha
-      const updates: any = { lastInteraction: new Date() };
+      // Atualiza dados e, se estava em 'respondeu', avança para 'atendimento_ia'
+      const updates: any = { lastInteraction: new Date(), status: 'Em conversa' };
       if (!contact.name || contact.name === contact.phone) {
         updates.name = data.pushName || contact.name;
       }
+      if (contact.stage === 'respondeu' || contact.stage === 'novo' || contact.stage === 'envio') {
+        updates.stage = 'atendimento_ia';
+        updates.iaStatus = 'Em qualificação';
+        this.logger.log(`Lead avançado para atendimento_ia: ${contact.name}`);
+      }
       await this.contactRepo.update(contact.id, updates);
+      contact = { ...contact, ...updates };
     }
 
     // Save incoming message
