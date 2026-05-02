@@ -64,6 +64,16 @@ export class ApifyService {
     return null;
   }
 
+  private cleanLinkedinUrl(url: string): string {
+    try {
+      const parsed = new URL(url.trim());
+      const path = parsed.pathname.replace(/\/$/, '');
+      return `https://www.linkedin.com${path}`;
+    } catch {
+      return url.trim();
+    }
+  }
+
   // ── Actor runner ──────────────────────────────────────────────────────────
 
   async runActor(actorId: string, input: Record<string, any>) {
@@ -280,12 +290,16 @@ export class ApifyService {
   // ── LINKEDIN ──────────────────────────────────────────────────────────────
 
   private async runLinkedin(query: string, limit: number): Promise<NormalizedLead[]> {
-    const urls = query.split(/[\n,]+/).map((u) => u.trim()).filter((u) => u.startsWith('http'));
-    if (urls.length === 0) {
+    const rawUrls = query.split(/[\n,]+/).map((u) => u.trim()).filter((u) => u.startsWith('http'));
+    if (rawUrls.length === 0) {
       throw new BadRequestException(
         'Para LinkedIn, informe URLs de perfis ou empresas. Ex: https://linkedin.com/in/usuario ou https://linkedin.com/company/empresa',
       );
     }
+
+    // Limpa query params e fragments de todas as URLs
+    const urls = rawUrls.map((u) => this.cleanLinkedinUrl(u));
+    this.logger.log(`LinkedIn URLs limpas: ${urls.join(', ')}`);
 
     const mode = this.resolveLinkedinMode(urls[0]);
 
@@ -302,6 +316,11 @@ export class ApifyService {
       profileUrls: urls.slice(0, limit),
     });
     const items = await this.getDatasetItems(datasetId, limit);
+    if (items.length === 0) {
+      throw new BadRequestException(
+        'Nenhum perfil encontrado. Verifique se a URL do LinkedIn é pública e válida.',
+      );
+    }
     return items.map((item) => this.normalizeLinkedinProfile(item));
   }
 
@@ -312,6 +331,11 @@ export class ApifyService {
       maxItems: limit,
     });
     const items = await this.getDatasetItems(datasetId, limit);
+    if (items.length === 0) {
+      throw new BadRequestException(
+        'Nenhum perfil encontrado. Verifique se a URL da empresa no LinkedIn é pública e válida.',
+      );
+    }
     return items.map((item) => this.normalizeLinkedinProfile(item));
   }
 
