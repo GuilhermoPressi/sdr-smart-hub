@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'https://api.sdr.grupogpressi.com.br';
+const API_BASE_URL = (import.meta.env.VITE_BACKEND_URL || 'https://api.sdr.grupogpressi.com.br').replace(/\/$/, '');
 
 export interface SearchLeadsPayload {
   source: 'google' | 'linkedin' | 'instagram' | 'website';
@@ -8,12 +8,23 @@ export interface SearchLeadsPayload {
 
 export interface LeadResult {
   name: string;
-  companyName: string;
   phone: string;
   email: string;
+  companyName: string;
+  jobTitle: string;
   website: string;
   address: string;
+  city: string;
+  state: string;
   profileUrl: string;
+  sourceUrl: string;
+  category: string;
+  score: number | null;
+  reviewsCount: number | null;
+  username: string;
+  source: string;
+  imported: boolean;
+  duplicate: boolean;
 }
 
 export interface SearchLeadsResponse {
@@ -22,10 +33,9 @@ export interface SearchLeadsResponse {
   query: string;
   totalFound: number;
   totalImported: number;
-  duplicatesIgnored: number;
-  executionTimeSeconds: number;
-  status: string;
-  leads?: LeadResult[];
+  totalDuplicates: number;
+  duration: number;
+  results: LeadResult[];
 }
 
 export interface ApifyLeadSearch {

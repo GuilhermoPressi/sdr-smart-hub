@@ -7,22 +7,33 @@ import {
 import axios from 'axios';
 import { LeadSource } from './dto/search-leads.dto';
 
+// Actor IDs reais na Apify Store
 const ACTOR_MAP: Record<LeadSource, string> = {
-  [LeadSource.GOOGLE]: 'compass/crawler-google-places',
+  [LeadSource.GOOGLE]:    'compass/crawler-google-places',
+  [LeadSource.LINKEDIN]:  'dev_fusion/Linkedin-Profile-Scraper',
   [LeadSource.INSTAGRAM]: 'apify/instagram-scraper',
-  [LeadSource.LINKEDIN]: 'curious_coder/linkedin-company-search-export',
-  [LeadSource.WEBSITE]: 'apify/website-content-crawler',
+  [LeadSource.WEBSITE]:   'apify/website-content-crawler',
 };
 
 export interface NormalizedLead {
   name: string;
-  companyName: string;
-  email: string;
   phone: string;
-  profileUrl: string;
+  email: string;
+  companyName: string;
+  jobTitle: string;
   website: string;
   address: string;
-  source: string;
+  city: string;
+  state: string;
+  profileUrl: string;
+  sourceUrl: string;
+  category: string;
+  score: number | null;
+  reviewsCount: number | null;
+  username: string;
+  source: LeadSource;
+  imported: boolean;
+  duplicate: boolean;
   rawData: Record<string, any>;
 }
 
@@ -42,10 +53,12 @@ export class ApifyService {
     });
   }
 
+  // ── Iniciar actor e aguardar ──────────────────────────────────────────────
+
   async runActor(actorId: string, input: Record<string, any>) {
     const client = this.getClient();
     const urlActorId = actorId.replace('/', '~');
-    this.logger.log(`▶ Iniciando actor: ${actorId} (URL: ${urlActorId})`);
+    this.logger.log(`▶ Actor: ${actorId} | URL: ${urlActorId}`);
     this.logger.log(`  Input: ${JSON.stringify(input)}`);
 
     try {
@@ -59,18 +72,19 @@ export class ApifyService {
         return this.pollRunUntilFinished(run.id, run.defaultDatasetId);
       }
       if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(run?.status)) {
-        throw new InternalServerErrorException(`Actor Apify falhou com status: ${run?.status}`);
+        throw new InternalServerErrorException(`Actor falhou: ${run?.status}`);
       }
-      return { runId: run?.id, datasetId: run?.defaultDatasetId, status: run?.status };
+      return { runId: run?.id, datasetId: run?.defaultDatasetId };
     } catch (err) {
       if (err instanceof BadRequestException || err instanceof InternalServerErrorException) throw err;
-      const apifyMsg = err?.response?.data?.error?.message || err?.response?.data?.message;
-      const httpStatus = err?.response?.status;
-      this.logger.error(`Erro Apify [${httpStatus}]: ${apifyMsg || err.message}`);
-      if (httpStatus === 401) throw new BadRequestException('Token Apify inválido ou sem permissão.');
-      if (httpStatus === 404) throw new BadRequestException(`Actor "${actorId}" não encontrado. Verifique se o actor existe na Apify Store.`);
-      if (httpStatus === 429) throw new BadRequestException('Limite de requisições Apify atingido. Aguarde e tente novamente.');
-      throw new InternalServerErrorException(`Erro ao chamar Apify: ${apifyMsg || err.message}`);
+      const msg = err?.response?.data?.error?.message || err?.response?.data?.message || err.message;
+      const status = err?.response?.status;
+      this.logger.error(`Erro Apify [${status}]: ${msg}`);
+      if (status === 401) throw new BadRequestException('Token Apify inválido.');
+      if (status === 404) throw new BadRequestException(`Actor "${actorId}" não encontrado.`);
+      if (status === 400) throw new BadRequestException(`Input inválido: ${msg}`);
+      if (status === 429) throw new BadRequestException('Rate limit Apify atingido.');
+      throw new InternalServerErrorException(`Erro Apify: ${msg}`);
     }
   }
 
@@ -83,14 +97,14 @@ export class ApifyService {
         const run = res.data?.data;
         this.logger.log(`  Polling ${runId}: ${run?.status} (${i + 1}/30)`);
         if (run?.status === 'SUCCEEDED') {
-          return { runId, datasetId: run?.defaultDatasetId || datasetId, status: run?.status };
+          return { runId, datasetId: run?.defaultDatasetId || datasetId };
         }
         if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(run?.status)) {
-          throw new InternalServerErrorException(`Actor falhou durante execução: ${run?.status}`);
+          throw new InternalServerErrorException(`Actor falhou no polling: ${run?.status}`);
         }
       } catch (err) {
         if (err instanceof InternalServerErrorException) throw err;
-        this.logger.warn(`Erro no polling (tentativa ${i + 1}): ${err.message}`);
+        this.logger.warn(`Polling erro (${i + 1}): ${err.message}`);
       }
     }
     throw new InternalServerErrorException('Timeout: actor demorou mais de 5 minutos.');
@@ -98,120 +112,260 @@ export class ApifyService {
 
   async getDatasetItems(datasetId: string, limit: number): Promise<any[]> {
     const client = this.getClient();
-    this.logger.log(`📦 Buscando dataset: ${datasetId} (limit: ${limit})`);
+    this.logger.log(`📦 Dataset: ${datasetId} (limit: ${limit})`);
     try {
       const res = await client.get(`/datasets/${datasetId}/items`, {
         params: { limit, clean: true, format: 'json' },
       });
       const items = Array.isArray(res.data) ? res.data : [];
-      this.logger.log(`  ✅ ${items.length} itens no dataset`);
+      this.logger.log(`  ✅ ${items.length} itens`);
       if (items.length > 0) {
-        this.logger.log(`  CAMPOS DO ITEM[0]: ${Object.keys(items[0]).join(', ')}`);
+        this.logger.log(`  CAMPOS: ${Object.keys(items[0]).join(', ')}`);
       }
       return items;
     } catch (err) {
       const msg = err?.response?.data?.error?.message || err.message;
-      throw new InternalServerErrorException(`Erro ao buscar dataset Apify: ${msg}`);
+      throw new InternalServerErrorException(`Erro ao buscar dataset: ${msg}`);
     }
   }
 
-  async runAndWait(source: LeadSource, query: string, limit: number) {
+  // ── Orquestrador ─────────────────────────────────────────────────────────
+
+  async runAndWait(source: LeadSource, query: string, limit: number): Promise<NormalizedLead[]> {
     const actorId = ACTOR_MAP[source];
-    if (!actorId) throw new BadRequestException(`Source "${source}" não tem actor configurado.`);
+    if (!actorId) throw new BadRequestException(`Source "${source}" sem actor configurado.`);
+
     const input = this.buildInput(source, query, limit);
-    const { runId, datasetId } = await this.runActor(actorId, input);
+    const { datasetId } = await this.runActor(actorId, input);
     const items = await this.getDatasetItems(datasetId, limit);
-    const leads = items.map((item) => this.normalize(item, source));
-    return { runId, leads };
+
+    return this.normalizeItems(source, query, items);
   }
 
-  private buildInput(source: LeadSource, query: string, limit: number) {
+  // ── Build de input por source ─────────────────────────────────────────────
+
+  private buildInput(source: LeadSource, query: string, limit: number): Record<string, any> {
     switch (source) {
       case LeadSource.GOOGLE:
         return {
           searchStringsArray: [query],
           maxCrawledPlacesPerSearch: limit,
         };
-      case LeadSource.INSTAGRAM:
-        return { search: query, searchType: 'hashtag', resultsLimit: limit };
-      case LeadSource.LINKEDIN:
-        return {
-          searchUrl: `https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(query)}`,
-          maxResults: limit,
-        };
+
+      case LeadSource.LINKEDIN: {
+        // query pode ser URLs separadas por vírgula ou nova linha
+        const urls = query
+          .split(/[\n,]+/)
+          .map((u) => u.trim())
+          .filter((u) => u.startsWith('http'));
+        if (urls.length === 0) {
+          throw new BadRequestException(
+            'Para LinkedIn, informe URLs de perfil (ex: https://linkedin.com/in/fulano). Separe múltiplas por vírgula.',
+          );
+        }
+        return { profileUrls: urls };
+      }
+
+      case LeadSource.INSTAGRAM: {
+        const isUrl = query.startsWith('http');
+        return isUrl
+          ? { directUrls: [query], resultsLimit: limit, resultsType: 'posts' }
+          : { search: query, searchType: 'hashtag', resultsLimit: limit };
+      }
+
       case LeadSource.WEBSITE:
         return {
           startUrls: [{ url: `https://www.google.com/search?q=${encodeURIComponent(query)}` }],
           maxCrawlPages: limit,
           maxCrawlDepth: 2,
         };
-      default:
-        return { query, limit };
     }
   }
 
-  normalize(item: any, source: LeadSource): NormalizedLead {
+  // ── Normalizador universal ─────────────────────────────────────────────────
+
+  private normalizeItems(source: LeadSource, _query: string, items: any[]): NormalizedLead[] {
+    const leads: NormalizedLead[] = [];
+
+    for (const item of items) {
+      if (source === LeadSource.INSTAGRAM) {
+        // Dono do post
+        if (item.ownerUsername) {
+          leads.push(this.normalizeInstagramOwner(item));
+        }
+        // Comentaristas
+        if (Array.isArray(item.latestComments)) {
+          for (const comment of item.latestComments) {
+            if (comment.ownerUsername) {
+              leads.push(this.normalizeInstagramComment(comment, item));
+            }
+          }
+        }
+      } else {
+        leads.push(this.normalizeItem(source, item));
+      }
+    }
+
+    return leads;
+  }
+
+  private normalizeItem(source: LeadSource, item: any): NormalizedLead {
     switch (source) {
       case LeadSource.GOOGLE:
         return {
           name: item.title || item.name || '',
-          companyName: item.title || item.name || '',
-          email: item.email || this.extractEmail(item.description) || '',
           phone: item.phone || item.phoneUnformatted || item.phoneNumber || '',
-          profileUrl: item.url || item.placeUrl || '',
+          email: item.email || this.extractEmail(item.description) || '',
+          companyName: item.title || item.name || '',
+          jobTitle: '',
           website: item.website || item.webUrl || '',
           address: item.address || item.street || '',
+          city: item.city || '',
+          state: item.state || '',
+          profileUrl: item.url || '',
+          sourceUrl: item.url || '',
+          category: item.categoryName || item.category || '',
+          score: item.totalScore ?? null,
+          reviewsCount: item.reviewsCount ?? null,
+          username: '',
           source,
+          imported: false,
+          duplicate: false,
           rawData: item,
         };
-      case LeadSource.INSTAGRAM:
-        return {
-          name: item.fullName || item.username || '',
-          companyName: item.fullName || '',
-          email: this.extractEmail(item.biography) || '',
-          phone: '',
-          profileUrl: item.url || `https://instagram.com/${item.username || ''}`,
-          website: item.externalUrl || '',
-          address: '',
-          source,
-          rawData: item,
-        };
+
       case LeadSource.LINKEDIN:
         return {
-          name: item.name || (item.firstName ? `${item.firstName} ${item.lastName}` : '') || '',
-          companyName: item.companyName || item.name || '',
+          name: item.fullName || `${item.firstName || ''} ${item.lastName || ''}`.trim() || '',
+          phone: item.mobileNumber || item.phone || '',
           email: item.email || '',
-          phone: item.phone || '',
-          profileUrl: item.linkedinUrl || item.url || '',
-          website: item.website || '',
-          address: item.location || '',
+          companyName: item.companyName || item.currentCompany || '',
+          jobTitle: item.jobTitle || item.currentPosition || '',
+          website: item.companyWebsite || item.website || '',
+          address: item.addressWithoutCountry || item.addressWithCountry || item.location || '',
+          city: item.city || '',
+          state: item.state || '',
+          profileUrl: item.linkedinPublicUrl || item.linkedinUrl || item.url || '',
+          sourceUrl: item.linkedinPublicUrl || item.linkedinUrl || item.url || '',
+          category: item.companyIndustry || item.industry || '',
+          score: null,
+          reviewsCount: null,
+          username: item.username || '',
           source,
+          imported: false,
+          duplicate: false,
           rawData: item,
         };
+
       case LeadSource.WEBSITE:
         return {
           name: item.title || '',
-          companyName: item.title || '',
-          email: this.extractEmail(item.text) || '',
           phone: this.extractPhone(item.text) || '',
-          profileUrl: item.url || '',
+          email: this.extractEmail(item.text) || '',
+          companyName: item.title || '',
+          jobTitle: '',
           website: item.url || '',
           address: '',
+          city: '',
+          state: '',
+          profileUrl: item.url || '',
+          sourceUrl: item.url || '',
+          category: '',
+          score: null,
+          reviewsCount: null,
+          username: '',
           source,
+          imported: false,
+          duplicate: false,
           rawData: item,
         };
+
       default:
-        return { name: item.name || '', companyName: '', email: item.email || '', phone: item.phone || '', profileUrl: item.url || '', website: '', address: '', source, rawData: item };
+        return this.emptyLead(source, item);
     }
   }
 
-  private extractEmail(text: string): string {
+  private normalizeInstagramOwner(item: any): NormalizedLead {
+    return {
+      name: item.ownerFullName || item.ownerUsername || '',
+      phone: '',
+      email: '',
+      companyName: '',
+      jobTitle: '',
+      website: '',
+      address: '',
+      city: '',
+      state: '',
+      profileUrl: `https://instagram.com/${item.ownerUsername}`,
+      sourceUrl: item.url || '',
+      category: 'Instagram profile',
+      score: null,
+      reviewsCount: null,
+      username: item.ownerUsername || '',
+      source: LeadSource.INSTAGRAM,
+      imported: false,
+      duplicate: false,
+      rawData: item,
+    };
+  }
+
+  private normalizeInstagramComment(comment: any, post: any): NormalizedLead {
+    return {
+      name: comment.ownerUsername || '',
+      phone: '',
+      email: '',
+      companyName: '',
+      jobTitle: '',
+      website: '',
+      address: '',
+      city: '',
+      state: '',
+      profileUrl: `https://instagram.com/${comment.ownerUsername}`,
+      sourceUrl: post.url || '',
+      category: 'Instagram commenter',
+      score: null,
+      reviewsCount: null,
+      username: comment.ownerUsername || '',
+      source: LeadSource.INSTAGRAM,
+      imported: false,
+      duplicate: false,
+      rawData: { comment, post },
+    };
+  }
+
+  private emptyLead(source: LeadSource, item: any): NormalizedLead {
+    return {
+      name: item.name || '',
+      phone: item.phone || '',
+      email: item.email || '',
+      companyName: '',
+      jobTitle: '',
+      website: item.website || '',
+      address: '',
+      city: '',
+      state: '',
+      profileUrl: item.url || '',
+      sourceUrl: item.url || '',
+      category: '',
+      score: null,
+      reviewsCount: null,
+      username: '',
+      source,
+      imported: false,
+      duplicate: false,
+      rawData: item,
+    };
+  }
+
+  // ── Utils ─────────────────────────────────────────────────────────────────
+
+  extractEmail(text: string): string {
     if (!text) return '';
     const match = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
     return match ? match[0].toLowerCase() : '';
   }
 
-  private extractPhone(text: string): string {
+  extractPhone(text: string): string {
     if (!text) return '';
     const match = text.match(/(\+55[\s-]?)?(\(?\d{2}\)?[\s-]?)(9?\d{4}[\s-]?\d{4})/);
     return match ? match[0].replace(/\s/g, '').trim() : '';

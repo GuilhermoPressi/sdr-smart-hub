@@ -18,6 +18,9 @@ export class Contact {
   @Column({ name: 'company_name', nullable: true })
   companyName: string;
 
+  @Column({ name: 'job_title', nullable: true })
+  jobTitle: string;
+
   @Index()
   @Column({ nullable: true })
   email: string;
@@ -35,6 +38,18 @@ export class Contact {
 
   @Column({ nullable: true })
   address: string;
+
+  @Column({ nullable: true })
+  city: string;
+
+  @Column({ nullable: true })
+  state: string;
+
+  @Column({ nullable: true })
+  category: string;
+
+  @Column({ nullable: true })
+  username: string;
 
   @Column({ default: 'manual' })
   source: string;
