@@ -12,7 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-type Source = "google" | "linkedin" | "instagram" | "website";
+type Source = "google" | "linkedin" | "instagram";
 type SearchState = "idle" | "loading" | "done" | "error";
 
 const SOURCES: {
@@ -28,7 +28,7 @@ const SOURCES: {
   {
     id: "linkedin", label: "LinkedIn", icon: Linkedin,
     description: "Perfis profissionais por URL.",
-    hint: "Cole URLs de perfis LinkedIn separadas por vírgula",
+    hint: "Cole URLs de perfis ou empresas. Ex: https://linkedin.com/in/usuario ou https://linkedin.com/company/google",
     badge: "URL obrigatória", badgeVariant: "warning",
   },
   {
@@ -37,12 +37,7 @@ const SOURCES: {
     hint: 'Use hashtag, @usuario ou URL. Ex: corretor, @perfil ou https://instagram.com/explore/tags/corretor/',
     badge: "Disponível", badgeVariant: "info",
   },
-  {
-    id: "website", label: "Web Crawler", icon: Globe,
-    description: "Extrai contatos de sites via busca.",
-    hint: 'Ex: "clínicas estéticas Porto Alegre"',
-    badge: "Avançado", badgeVariant: "warning",
-  },
+
 ];
 
 const LIMITS = [10, 25, 50, 100];
