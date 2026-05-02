@@ -1,7 +1,7 @@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { Phone, Mail, MessageCircle, Globe, MapPin } from "lucide-react";
+import { Phone, Mail, MessageCircle, ExternalLink, MapPin } from "lucide-react";
 import { useApp, Lead, STAGES } from "@/store/app";
 import { useNavigate } from "react-router-dom";
 
@@ -66,7 +66,7 @@ export function ContactDetailsSheet({
                   )}
                   {viewingContact.website && (
                     <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full bg-surface-elevated flex items-center justify-center text-primary"><Globe className="h-4 w-4" /></div>
+                      <div className="h-8 w-8 rounded-full bg-surface-elevated flex items-center justify-center text-primary"><ExternalLink className="h-4 w-4" /></div>
                       <a href={viewingContact.website} target="_blank" rel="noreferrer" className="text-primary hover:underline truncate max-w-[200px]">
                         {viewingContact.website.replace(/https?:\/\//, '')}
                       </a>

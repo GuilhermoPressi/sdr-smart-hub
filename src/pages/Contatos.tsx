@@ -85,7 +85,7 @@ export default function Contatos() {
     const csvRows = [
       headers.join(";"),
       ...dataToExport.map((l) =>
-        [l.name, l.role || "", l.company || "", l.phone, l.email, l.linkedin || "", l.origin, l.tags.join(", "), l.crm, l.stage, l.status]
+        [l.name, l.jobTitle || "", l.companyName || "", l.phone, l.email, l.profileUrl || "", l.origin, l.tags.join(", "), l.crm, l.stage, l.status]
           .map((v) => `"${String(v).replace(/"/g, '""')}"`)
           .join(";")
       ),
