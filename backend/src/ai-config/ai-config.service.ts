@@ -1,7 +1,29 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AiConfig } from './entities/ai-config.entity';
+
+function isValidUuid(v: any): boolean {
+  if (!v || typeof v !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+}
+
+function sanitize(data: Partial<AiConfig>): Partial<AiConfig> {
+  const clean: any = { ...data };
+  // Remove id vazio — nunca enviar id="" para o banco
+  if (!isValidUuid(clean.id)) delete clean.id;
+  // UUID opcionais: companyId, userId
+  if (!isValidUuid(clean.companyId)) clean.companyId = null;
+  if (!isValidUuid(clean.userId)) clean.userId = null;
+  // Remove campos que não existem na entity
+  const allowed = [
+    'id','internalName','displayName','company','segment','product','audience',
+    'problem','benefit','tone','qualifiedCriteria','discovery','neverPromise',
+    'neverAsk','instructions','flow','evolutionInstance','companyId','userId','active',
+  ];
+  Object.keys(clean).forEach(k => { if (!allowed.includes(k)) delete clean[k]; });
+  return clean;
+}
 
 @Injectable()
 export class AiConfigService {
@@ -15,6 +37,7 @@ export class AiConfigService {
   }
 
   async findById(id: string): Promise<AiConfig | null> {
+    if (!isValidUuid(id)) return null;
     return this.repo.findOneBy({ id });
   }
 
@@ -23,28 +46,33 @@ export class AiConfigService {
   }
 
   async save(data: Partial<AiConfig>): Promise<AiConfig> {
-    if (data.id) {
-      await this.repo.update(data.id, data);
-      return this.repo.findOneBy({ id: data.id });
+    const clean = sanitize(data);
+
+    if (clean.id && isValidUuid(clean.id)) {
+      // UPDATE
+      await this.repo.update(clean.id, clean);
+      return this.repo.findOneBy({ id: clean.id });
     }
-    const entity = this.repo.create(data);
+    // INSERT
+    const entity = this.repo.create(clean);
     return this.repo.save(entity);
   }
 
   async activate(id: string): Promise<AiConfig> {
-    // Desativa todas as outras
+    if (!isValidUuid(id)) throw new BadRequestException('ID inválido');
     await this.repo.update({ active: true }, { active: false });
-    // Ativa esta
     await this.repo.update(id, { active: true });
     return this.repo.findOneBy({ id });
   }
 
   async deactivate(id: string): Promise<AiConfig> {
+    if (!isValidUuid(id)) throw new BadRequestException('ID inválido');
     await this.repo.update(id, { active: false });
     return this.repo.findOneBy({ id });
   }
 
   async delete(id: string): Promise<void> {
+    if (!isValidUuid(id)) throw new BadRequestException('ID inválido');
     await this.repo.delete(id);
   }
 }

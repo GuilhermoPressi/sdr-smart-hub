@@ -55,9 +55,20 @@ export const api = {
   // AI Config
   getAiConfigs: () => request<any[]>('/ai-config'),
   getActiveAiConfig: () => request<any>('/ai-config/active'),
-  saveAiConfig: (data: any) => (data.id && data.id.length > 10)
-    ? request<any>(`/ai-config/${data.id}`, { method: 'PUT', body: JSON.stringify(data) })
-    : request<any>('/ai-config', { method: 'POST', body: JSON.stringify(data) }),
+  saveAiConfig: (data: any) => {
+    // Limpa campos que não devem ir para o backend
+    const { id, built, goalPreset, goal, differentials, pricingFactors, formality,
+            responseLength, initialMessage, evolutionInitialMsg, region, ...clean } = data;
+    // UUID válido = 36 chars com hífens
+    const isValidId = id && typeof id === 'string' && id.length === 36 && id.includes('-');
+    const payload = { ...clean, tone: clean.tone || 'Profissional' };
+    if (isValidId) {
+      console.log('[AI] Atualizando config:', id, payload);
+      return request<any>(`/ai-config/${id}`, { method: 'PUT', body: JSON.stringify({ ...payload, id }) });
+    }
+    console.log('[AI] Criando nova config:', payload);
+    return request<any>('/ai-config', { method: 'POST', body: JSON.stringify(payload) });
+  },
   activateAiConfig: (id: string) =>
     request<any>(`/ai-config/${id}/activate`, { method: 'PATCH' }),
   deactivateAiConfig: (id: string) =>
