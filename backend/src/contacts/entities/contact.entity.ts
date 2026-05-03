@@ -87,6 +87,9 @@ export class Contact {
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;
 
+  /** Etapa atual do fluxo de conversa (id do ConversationStep) */
+  @Column({ name: 'conversation_stage', nullable: true })
+  conversationStage: string;
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

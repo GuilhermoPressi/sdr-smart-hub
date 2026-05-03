@@ -3,21 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Contact } from '../contacts/entities/contact.entity';
 import { MessagesService } from '../messages/messages.service';
-import { OpenaiService } from '../openai/openai.service';
+import { OpenaiService, AIResponsePayload } from '../openai/openai.service';
 import { AiConfigService } from '../ai-config/ai-config.service';
 import { EvolutionService } from './evolution.service';
+import { AiConfig, ConversationStep } from '../ai-config/entities/ai-config.entity';
 
-/**
- * This controller receives webhook payloads from the Evolution API.
- * It is NOT protected by the API key guard because Evolution calls it directly.
- *
- * Flow:
- * 1. Evolution sends `messages.upsert` event when a lead sends a message
- * 2. We save the message in the database
- * 3. We check if the IA is active for this contact
- * 4. If active, we call OpenAI to generate a response
- * 5. We send the response back via Evolution
- */
 @Controller('webhooks/evolution')
 export class WebhookController {
   private readonly logger = new Logger(WebhookController.name);
@@ -44,34 +34,30 @@ export class WebhookController {
       return { received: true, ignored: true };
     }
 
-    // Evolution v2 can put message data at different levels
     const data = payload?.data || payload;
     if (!data) return { received: true, ignored: true };
 
-    // Ignore messages sent by us (fromMe)
     const key = data.key || data?.message?.key;
-    const isFromMe = key?.fromMe;
-    if (isFromMe) return { received: true, ignored: true };
+    if (key?.fromMe) return { received: true, ignored: true };
 
     const remoteJid = key?.remoteJid;
     if (!remoteJid || remoteJid.includes('@g.us')) {
       return { received: true, ignored: true };
     }
 
-    // LID format (@lid) = novo formato do WhatsApp — usar senderPn como fallback
+    // Extract phone
     let phone: string;
     if (remoteJid.includes('@lid')) {
       const senderPn = key?.senderPn || data?.senderPn || '';
       phone = senderPn.replace('@s.whatsapp.net', '');
-      this.logger.log(`JID @lid detectado. Usando senderPn: ${senderPn} → phone: ${phone}`);
     } else {
       phone = remoteJid.replace('@s.whatsapp.net', '');
     }
 
     if (!phone || phone.includes('@')) {
-      this.logger.warn(`Não foi possível extrair telefone do JID: ${remoteJid}`);
       return { received: true, ignored: true };
     }
+
     const msgBody = data.message || {};
     const text = msgBody.conversation
       || msgBody.extendedTextMessage?.text
@@ -82,16 +68,14 @@ export class WebhookController {
 
     if (!text.trim()) return { received: true, ignored: true };
 
-    this.logger.log(`📩 Nova mensagem de ${phone}: "${text.substring(0, 60)}${text.length > 60 ? '...' : ''}"`);
+    this.logger.log(`📩 Mensagem de ${phone}: "${text.substring(0, 60)}..."`);
 
-    // Dedup check
+    // Dedup
     if (await this.messagesSvc.existsByWaId(waMessageId)) {
-      this.logger.warn('Mensagem duplicada, ignorando.');
       return { received: true, duplicate: true };
     }
 
-    // Find or create contact
-    // Busca por variações do telefone (com ou sem 55)
+    // ── 1. Find or create contact ───────────────────────────────────────
     let contact = await this.contactRepo.findOne({
       where: [
         { phone },
@@ -105,7 +89,7 @@ export class WebhookController {
         name: data.pushName || phone,
         source: 'whatsapp',
         origin: 'WhatsApp Evolution',
-        stage: 'atendimento_ia',   // Já entra direto no atendimento da IA
+        stage: 'atendimento_ia',
         iaStatus: 'Em qualificação',
         temperature: 'Morno',
         status: 'Em conversa',
@@ -114,17 +98,15 @@ export class WebhookController {
         lastInteraction: new Date(),
       });
       contact = await this.contactRepo.save(contact);
-      this.logger.log(`✅ Novo contato criado: ${contact.name} (${phone})`);
+      this.logger.log(`✅ Novo contato: ${contact.name} (${phone})`);
     } else {
-      // Atualiza dados e, se estava em 'respondeu', avança para 'atendimento_ia'
       const updates: any = { lastInteraction: new Date(), status: 'Em conversa' };
       if (!contact.name || contact.name === contact.phone) {
         updates.name = data.pushName || contact.name;
       }
-      if (contact.stage === 'respondeu' || contact.stage === 'novo' || contact.stage === 'envio') {
+      if (['respondeu', 'novo', 'envio'].includes(contact.stage)) {
         updates.stage = 'atendimento_ia';
         updates.iaStatus = 'Em qualificação';
-        this.logger.log(`Lead avançado para atendimento_ia: ${contact.name}`);
       }
       await this.contactRepo.update(contact.id, updates);
       contact = { ...contact, ...updates };
@@ -139,86 +121,175 @@ export class WebhookController {
       waMessageId,
     });
 
-    // Update last interaction
     await this.contactRepo.update(contact.id, {
       lastInteraction: new Date(),
       status: 'Em conversa',
     });
 
-    // ── Check if IA should respond ──────────────────────────────────────
-    // Stages bloqueados: IA NÃO responde
+    // ── 2. Check blocked stages/statuses ─────────────────────────────────
     const blockedStages = ['atendimento_humano', 'ganho', 'perdido'];
     if (blockedStages.includes(contact.stage)) {
-      this.logger.log(`⏸️ IA não responde — stage bloqueado: ${contact.stage} (contato: ${contact.name})`);
-      return { received: true, iaSkipped: true, reason: 'blocked_stage' };
+      this.logger.log(`⏸️ Stage bloqueado: ${contact.stage} (${contact.name})`);
+      return { received: true, iaSkipped: true };
     }
 
-    // iaStatus bloqueados: IA NÃO responde
-    const blockedIaStatuses = ['Pausado', 'Vendedor assumiu', 'Negócio fechado'];
-    if (blockedIaStatuses.includes(contact.iaStatus)) {
-      this.logger.log(`⏸️ IA pausada/bloqueada para ${contact.name} (iaStatus: ${contact.iaStatus})`);
-      return { received: true, iaSkipped: true, reason: 'ia_paused' };
+    const blockedStatuses = ['Pausado', 'Vendedor assumiu', 'Negócio fechado'];
+    if (blockedStatuses.includes(contact.iaStatus)) {
+      this.logger.log(`⏸️ IA pausada: ${contact.iaStatus} (${contact.name})`);
+      return { received: true, iaSkipped: true };
     }
 
-    // ── Get AI config ───────────────────────────────────────────────────
+    // ── 3. Get AI config ─────────────────────────────────────────────────
     const aiConfig = await this.aiConfigSvc.findActive();
     if (!aiConfig) {
-      this.logger.warn('⚠️ Nenhuma configuração de IA ativa encontrada. Mensagem salva, mas sem resposta automática.');
+      this.logger.warn('⚠️ Nenhuma IA ativa.');
       return { received: true, noConfig: true };
     }
 
-    this.logger.log(`🤖 IA "${aiConfig.displayName || aiConfig.internalName}" processando mensagem de ${contact.name}...`);
+    // ── 4. Check auto rules BEFORE calling OpenAI ────────────────────────
+    if (aiConfig.autoRules) {
+      const rules = aiConfig.autoRules;
 
-    // ── Get conversation history ────────────────────────────────────────
+      // Transfer keywords check
+      if (rules.transferKeywords && rules.transferKeywords.length > 0) {
+        const lowerText = text.toLowerCase();
+        const matched = rules.transferKeywords.find(kw => lowerText.includes(kw.toLowerCase()));
+        if (matched) {
+          this.logger.log(`🔀 Keyword de transferência detectada: "${matched}" → pausando IA`);
+          await this.contactRepo.update(contact.id, {
+            iaStatus: 'Vendedor assumiu',
+            stage: 'atendimento_humano',
+          });
+          return { received: true, transferred: true, keyword: matched };
+        }
+      }
+
+      // Pause on human reply check
+      if (rules.pauseOnHumanReply) {
+        // Check if last message before this one was from a human (not IA, not lead)
+        const recentMsgs = await this.messagesSvc.findByContact(contact.id, 5);
+        const lastNonLead = recentMsgs.filter(m => m.sender !== 'lead').pop();
+        if (lastNonLead?.sender === 'human') {
+          this.logger.log(`⏸️ Humano respondeu antes → IA não intervém`);
+          return { received: true, iaSkipped: true, reason: 'human_replied' };
+        }
+      }
+    }
+
+    // ── 5. Check exit conditions + advance stage BEFORE OpenAI ───────────
+    const hasFlow = aiConfig.conversationFlow && aiConfig.conversationFlow.length > 0;
+    if (hasFlow) {
+      // Initialize stage if not set
+      if (!contact.conversationStage) {
+        const firstStage = aiConfig.conversationFlow[0].id;
+        await this.contactRepo.update(contact.id, { conversationStage: firstStage });
+        contact.conversationStage = firstStage;
+        this.logger.log(`📍 Etapa inicial definida: ${firstStage}`);
+      }
+
+      // Check exit conditions of current stage
+      const currentStep = aiConfig.conversationFlow.find(s => s.id === contact.conversationStage);
+      if (currentStep) {
+        const shouldAdvance = this.checkExitConditions(currentStep, text, aiConfig, contact);
+        if (shouldAdvance && currentStep.nextStep) {
+          this.logger.log(`📍 Avançando etapa: ${currentStep.id} → ${currentStep.nextStep}`);
+          await this.contactRepo.update(contact.id, { conversationStage: currentStep.nextStep });
+          contact.conversationStage = currentStep.nextStep;
+
+          // Check if advancing to a special stage triggers CRM move
+          if (aiConfig.autoRules?.moveOnQualify) {
+            const qualifyStage = aiConfig.autoRules.qualifyStage || 'qualificado';
+            const newStep = aiConfig.conversationFlow.find(s => s.id === currentStep.nextStep);
+            if (newStep?.id === 'handoff' || newStep?.id === 'fechamento') {
+              await this.contactRepo.update(contact.id, { stage: qualifyStage });
+              this.logger.log(`🏆 Lead qualificado → movido para ${qualifyStage}`);
+            }
+          }
+        }
+      }
+    }
+
+    // ── 6. Call OpenAI ───────────────────────────────────────────────────
     const history = await this.messagesSvc.findByContact(contact.id, 20);
+    let aiPayload: AIResponsePayload | null;
 
-    // ── Generate IA response (with failsafe) ────────────────────────────
-    let aiResponse: string | null;
     try {
-      aiResponse = await this.openaiSvc.generateResponse(
-        aiConfig,
-        contact,
-        history,
-      );
+      aiPayload = await this.openaiSvc.generateResponse(aiConfig, contact, history);
     } catch (err) {
-      // FAILSAFE: Não travar o webhook, não enviar mensagem ao cliente
-      this.logger.error(`❌ Erro ao gerar resposta da IA para ${contact.name}: ${err.message || err}`);
-      this.logger.error(`Stack: ${err.stack || 'N/A'}`);
+      this.logger.error(`❌ Erro OpenAI: ${err.message}`);
       return { received: true, error: 'openai_failed' };
     }
 
-    if (!aiResponse) {
-      this.logger.warn(`⚠️ OpenAI retornou vazio para ${contact.name}. Não enviando resposta.`);
+    if (!aiPayload || !aiPayload.reply) {
+      this.logger.warn('⚠️ Resposta vazia da IA.');
       return { received: true, emptyResponse: true };
     }
 
-    // ── Send via Evolution (with failsafe) ──────────────────────────────
+    const aiResponse = aiPayload.reply;
+
+    // ── 7. Process suggested stage change (AI suggests, backend decides) ─
+    if (hasFlow && aiPayload.suggestedNextStage) {
+      const suggested = aiPayload.suggestedNextStage;
+      const validStep = aiConfig.conversationFlow.find(s => s.id === suggested);
+      if (validStep && suggested !== contact.conversationStage) {
+        this.logger.log(`🤖 IA sugeriu etapa: ${suggested} — aplicando`);
+        await this.contactRepo.update(contact.id, { conversationStage: suggested });
+        contact.conversationStage = suggested;
+      }
+    }
+
+    // ── 8. Send via Evolution ────────────────────────────────────────────
     try {
       await this.evoSvc.sendText(instanceName, phone, aiResponse);
     } catch (err) {
-      this.logger.error(`❌ Erro ao enviar resposta via Evolution para ${phone}: ${err.message || err}`);
-      // Salva a resposta no banco mesmo se falhar o envio (para não perder)
+      this.logger.error(`❌ Erro Evolution: ${err.message}`);
       await this.messagesSvc.create({
-        contactId: contact.id,
-        text: aiResponse,
-        sender: 'ia',
-        instanceName,
-        status: 'failed',
+        contactId: contact.id, text: aiResponse, sender: 'ia',
+        instanceName, status: 'failed',
       });
-      return { received: true, error: 'evolution_send_failed' };
+      return { received: true, error: 'evolution_failed' };
     }
 
-    // ── Save IA response in DB ──────────────────────────────────────────
+    // ── 9. Save response ────────────────────────────────────────────────
     await this.messagesSvc.create({
-      contactId: contact.id,
-      text: aiResponse,
-      sender: 'ia',
-      instanceName,
-      status: 'sent',
+      contactId: contact.id, text: aiResponse, sender: 'ia',
+      instanceName, status: 'sent',
     });
 
-    this.logger.log(`🤖 IA respondeu para ${contact.name}: "${aiResponse.substring(0, 80)}${aiResponse.length > 80 ? '...' : ''}"`);
+    this.logger.log(`🤖 IA respondeu ${contact.name} [stage: ${contact.conversationStage || '-'}]: "${aiResponse.substring(0, 80)}..."`);
 
-    return { received: true, responded: true };
+    return { received: true, responded: true, stage: contact.conversationStage };
+  }
+
+  // ── Exit Conditions Checker ──────────────────────────────────────────
+
+  private checkExitConditions(
+    step: ConversationStep,
+    lastMessage: string,
+    config: AiConfig,
+    contact: Contact,
+  ): boolean {
+    if (!step.exitConditions || step.exitConditions.length === 0) return false;
+
+    const lowerMsg = lastMessage.toLowerCase();
+
+    // Simple keyword/phrase matching on exit conditions
+    // Each exit condition is a description — we check if the lead's message
+    // contains keywords that suggest the condition was met
+    for (const condition of step.exitConditions) {
+      const keywords = condition.toLowerCase()
+        .replace(/[.,!?]/g, '')
+        .split(/\s+/)
+        .filter(w => w.length > 3); // ignore short words
+
+      // If at least 60% of meaningful keywords from the condition appear in the message
+      const matched = keywords.filter(kw => lowerMsg.includes(kw));
+      if (keywords.length > 0 && matched.length / keywords.length >= 0.5) {
+        this.logger.log(`✅ Exit condition matched: "${condition}"`);
+        return true;
+      }
+    }
+
+    return false;
   }
 }

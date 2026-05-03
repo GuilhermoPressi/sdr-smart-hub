@@ -6,6 +6,37 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
+// ── Types ────────────────────────────────────────────────────────────────
+
+export interface ConversationStep {
+  id: string;
+  name: string;
+  initialMessage: string;
+  questions: string[];
+  objective: string;
+  nextStep: string;
+  exitConditions: string[];
+  requiredAnswers?: string[];
+}
+
+export interface KnowledgeBase {
+  faq: { question: string; answer: string }[];
+  urls: string[];
+  files: { name: string; uploadedAt: string }[];
+  priority?: 'faq_first' | 'ai_first';
+}
+
+export interface AutoRules {
+  transferKeywords: string[];
+  followUpEnabled: boolean;
+  followUpHours: number;
+  moveOnQualify: boolean;
+  qualifyStage: string;
+  pauseOnHumanReply: boolean;
+}
+
+// ── Entity ───────────────────────────────────────────────────────────────
+
 @Entity('ai_configs')
 export class AiConfig {
   @PrimaryGeneratedColumn('uuid')
@@ -42,7 +73,7 @@ export class AiConfig {
   @Column({ name: 'qualified_criteria', type: 'text', nullable: true })
   qualifiedCriteria: string;
 
-  /** Discovery questions stored as JSON */
+  /** Discovery questions stored as JSON (legacy) */
   @Column({ type: 'jsonb', nullable: true })
   discovery: Record<string, string>;
 
@@ -55,35 +86,48 @@ export class AiConfig {
   @Column({ type: 'text', nullable: true })
   instructions: string;
 
-  /** Objetivo principal da IA na conversa */
   @Column({ type: 'text', nullable: true })
   goal: string;
 
-  /** Nível de formalidade: Informal, Equilibrado, Formal */
   @Column({ nullable: true })
   formality: string;
 
-  /** Tamanho das respostas: Curtas, Médias, Detalhadas */
   @Column({ name: 'response_length', nullable: true })
   responseLength: string;
 
-  /** Diferenciais do produto/serviço */
   @Column({ type: 'text', nullable: true })
   differentials: string;
 
-  /** Fatores que influenciam o preço */
   @Column({ name: 'pricing_factors', type: 'text', nullable: true })
   pricingFactors: string;
 
-  /** Região de atendimento */
   @Column({ nullable: true })
   region: string;
 
-  /** Mensagem inicial personalizada */
   @Column({ name: 'initial_message', type: 'text', nullable: true })
   initialMessage: string;
 
-  /** Flow configuration (templates, timeouts) as JSON */
+  // ── NEW: 4 Abas ────────────────────────────────────────────────────────
+
+  /** Aba 1: Fluxo de Atendimento — etapas com controle de estado */
+  @Column({ name: 'conversation_flow', type: 'jsonb', nullable: true })
+  conversationFlow: ConversationStep[];
+
+  /** Aba 2: Comportamento — regras de conduta da IA */
+  @Column({ name: 'behavior_rules', type: 'jsonb', nullable: true })
+  behaviorRules: string[];
+
+  /** Aba 3: Conhecimento — FAQ, URLs, Arquivos */
+  @Column({ type: 'jsonb', nullable: true })
+  knowledge: KnowledgeBase;
+
+  /** Aba 4: Regras Automáticas — gatilhos e automações */
+  @Column({ name: 'auto_rules', type: 'jsonb', nullable: true })
+  autoRules: AutoRules;
+
+  // ── Existing fields ────────────────────────────────────────────────────
+
+  /** Legacy flow configuration */
   @Column({ type: 'jsonb', nullable: true })
   flow: Record<string, any>;
 

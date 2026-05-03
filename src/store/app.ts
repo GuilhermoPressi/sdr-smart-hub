@@ -46,6 +46,35 @@ export interface Lead {
   lastInteraction: string;
 }
 
+// ── New types for 4-tab AI config ───────────────────────────────────────
+
+export interface ConversationStep {
+  id: string;
+  name: string;
+  initialMessage: string;
+  questions: string[];
+  objective: string;
+  nextStep: string;
+  exitConditions: string[];
+  requiredAnswers?: string[];
+}
+
+export interface KnowledgeBase {
+  faq: { question: string; answer: string }[];
+  urls: string[];
+  files: { name: string; uploadedAt: string }[];
+  priority?: "faq_first" | "ai_first";
+}
+
+export interface AutoRules {
+  transferKeywords: string[];
+  followUpEnabled: boolean;
+  followUpHours: number;
+  moveOnQualify: boolean;
+  qualifyStage: string;
+  pauseOnHumanReply: boolean;
+}
+
 export interface AIConfig {
   id: string;
   displayName: string;
@@ -77,6 +106,12 @@ export interface AIConfig {
   neverAsk: string;
   instructions: string;
   built: boolean;
+  // ── New 4-tab fields ──
+  conversationFlow?: ConversationStep[];
+  behaviorRules?: string[];
+  knowledge?: KnowledgeBase;
+  autoRules?: AutoRules;
+  active?: boolean;
 }
 
 export interface Connections {
