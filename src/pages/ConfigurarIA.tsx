@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Bot, CheckCircle2, ArrowRight, ArrowLeft, Wand2, Plus, Edit2, Trash2, AlertCircle
@@ -29,23 +29,24 @@ export default function ConfigurarIA() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // Load existing configs on mount
-  useState(() => {
+  // Load existing configs on mount — sincroniza backend → Zustand
+  useEffect(() => {
     const loadConfigs = async () => {
       try {
         const configs = await api.getAiConfigs();
-        // Track which one is active
-        const active = configs.find((c: any) => c.active);
-        if (active) setActiveConfigId(active.id);
-        if (configs.length > 0) {
-          // If we have configs, maybe auto-select one or just show the list
+        if (configs && configs.length > 0) {
+          // Popula o Zustand com todas as IAs do banco
+          configs.forEach((c: any) => saveAgent(c));
+          // Rastreia qual está ativa
+          const active = configs.find((c: any) => c.active);
+          if (active) setActiveConfigId(active.id);
         }
       } catch (e) {
         console.error("Erro ao carregar configurações", e);
       }
     };
     loadConfigs();
-  });
+  }, []);
 
 
   // Step validation
@@ -296,12 +297,26 @@ export default function ConfigurarIA() {
               internalName,
               displayName,
               built: true,
-              active: false, // começa inativa, usuário ativa manualmente
+              active: false,
             };
             
-            // Real Save to Backend
+            // Salva no backend
             const savedAgent = await api.saveAiConfig(finalAgent);
             
+            // Ativa automaticamente se for a primeira IA ou não houver ativa
+            const currentAgents = agents.filter(a => a.id !== savedAgent.id);
+            const hasActiveAgent = currentAgents.some(a => a.id === activeConfigId);
+            
+            if (!hasActiveAgent || currentAgents.length === 0) {
+              try {
+                await api.activateAiConfig(savedAgent.id);
+                setActiveConfigId(savedAgent.id);
+                console.log("[AI] Ativada automaticamente:", savedAgent.id);
+              } catch (activateErr) {
+                console.warn("[AI] Não foi possível ativar automaticamente:", activateErr);
+              }
+            }
+
             setAI(savedAgent); 
             saveAgent(savedAgent); 
             

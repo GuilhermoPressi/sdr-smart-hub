@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 export type Temperature = "Frio" | "Morno" | "Quente";
 export type StageId =
@@ -167,7 +168,9 @@ const defaultFlow: FlowConfig = {
   qualifiedStage: "qualificado",
 };
 
-export const useApp = create<Store>((set) => ({
+export const useApp = create<Store>()(
+  persist(
+    (set) => ({
   ai: defaultAI,
   setAI: (patch) => set((s) => ({ ai: { ...s.ai, ...patch, discovery: { ...s.ai.discovery, ...(patch.discovery || {}) } } })),
   markBuilt: () => set((s) => ({ ai: { ...s.ai, built: true } })),
@@ -263,7 +266,19 @@ export const useApp = create<Store>((set) => ({
   },
   activeChatLeadId: null,
   setActiveChatLead: (id) => set({ activeChatLeadId: id }),
-}));
+    }),
+    {
+      name: "leadflow-store", // chave no localStorage
+      partialize: (state) => ({
+        // Persiste apenas o que não deve sumir ao recarregar
+        agents: state.agents,
+        ai: state.ai,
+        flow: state.flow,
+        // NÃO persiste leads (buscados do backend), chatHistory, connections
+      }),
+    }
+  )
+);
 
 export const STAGES: { id: StageId; title: string; description: string; accent: string }[] = [
   { id: "novo",              title: "Novo Lead",             description: "Leads cadastrados ou importados.",                          accent: "hsl(200 95% 60%)" },

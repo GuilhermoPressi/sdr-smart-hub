@@ -2,6 +2,7 @@
  * use-ai-watcher.ts
  * ────────────────────────────────────────────────────────────────────────────
  * Hook que:
+ *  - Sincroniza agents do backend com o Zustand na inicialização
  *  - Faz polling das conversas a cada N segundos
  *  - Para cada conversa com IA ativa, verifica se há nova mensagem do lead
  *  - Aciona o ai-responder para gerar e enviar a resposta
@@ -20,12 +21,10 @@ import {
   AILog,
 } from "@/lib/ai-responder";
 
-const POLL_INTERVAL_MS = 6000; // 6 segundos
+const POLL_INTERVAL_MS = 6000;
 const INSTANCE_NAME = "Gpressi";
 
-// IDs das últimas mensagens já processadas por conversa { conversationId → lastMessageId }
 const processedLastMsg = new Map<string, string>();
-// Conversas atualmente sendo processadas (evita concorrência)
 const processing = new Set<string>();
 
 export interface AIWatcherStatus {
@@ -34,33 +33,51 @@ export interface AIWatcherStatus {
 }
 
 export function useAiWatcher(): AIWatcherStatus {
-  const { agents } = useApp();
+  const { agents, saveAgent } = useApp();
   const logsRef = useRef<AILog[]>([]);
-  const activeRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const syncedRef = useRef(false);
 
-  // Pega a IA ativa (primeiro agent marcado como ativo no backend, ou o primeiro da lista)
+  // ── Sincroniza agents do backend com Zustand ao montar ──────────────────
+  useEffect(() => {
+    if (syncedRef.current) return;
+    syncedRef.current = true;
+
+    const syncAgents = async () => {
+      try {
+        const configs = await api.getAiConfigs();
+        if (configs && configs.length > 0) {
+          configs.forEach((c: any) => saveAgent(c));
+          console.log(`[AI-Watcher] ${configs.length} configuração(ões) sincronizada(s) do backend.`);
+        }
+      } catch (e) {
+        console.warn("[AI-Watcher] Não foi possível sincronizar configs do backend:", e);
+      }
+    };
+
+    syncAgents();
+  }, [saveAgent]);
+
+  // Pega a IA ativa — prioriza a que tem active=true, senão usa a primeira
   const getActiveAiConfig = useCallback(() => {
     if (agents.length === 0) return null;
-    return agents[0]; // O backend controla qual está ativo; usamos o primeiro disponível
+    return agents.find((a: any) => a.active) || agents[0];
   }, [agents]);
 
   const runCycle = useCallback(async () => {
     const aiConfig = getActiveAiConfig();
     if (!aiConfig) return;
 
-    // Atualiza referência de logs
     logsRef.current = getLogs();
 
     let conversations: any[];
     try {
       conversations = await api.getConversations();
     } catch {
-      return; // Silencioso — retry no próximo ciclo
+      return;
     }
 
     for (const conv of conversations) {
-      // Verificar se esta conversa precisa de resposta IA
       if (!shouldAiRespond(conv)) continue;
       if (processing.has(conv.id)) continue;
 
@@ -76,10 +93,8 @@ export function useAiWatcher(): AIWatcherStatus {
       const lastMsg = messages[messages.length - 1];
       const lastMsgId = lastMsg?.id;
 
-      // Já processamos esta mensagem?
       if (lastMsgId && processedLastMsg.get(conv.id) === lastMsgId) continue;
 
-      // Marcar como em processamento
       processing.add(conv.id);
 
       try {
@@ -90,30 +105,24 @@ export function useAiWatcher(): AIWatcherStatus {
           instanceName: INSTANCE_NAME,
         });
 
-        // Marcar mensagem como processada
         if (lastMsgId) processedLastMsg.set(conv.id, lastMsgId);
       } catch {
         // Erro já logado dentro de processAndRespond
       } finally {
         processing.delete(conv.id);
-        // Atualiza logs após cada processamento
         logsRef.current = getLogs();
       }
     }
   }, [getActiveAiConfig]);
 
   useEffect(() => {
-    activeRef.current = agents.length > 0;
-
     if (agents.length > 0) {
-      // Rodar imediatamente e depois em intervalo
       runCycle();
       timerRef.current = setInterval(runCycle, POLL_INTERVAL_MS);
     }
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      activeRef.current = false;
     };
   }, [agents, runCycle]);
 
