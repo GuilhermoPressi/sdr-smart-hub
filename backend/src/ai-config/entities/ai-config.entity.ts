@@ -55,6 +55,34 @@ export class AiConfig {
   @Column({ type: 'text', nullable: true })
   instructions: string;
 
+  /** Objetivo principal da IA na conversa */
+  @Column({ type: 'text', nullable: true })
+  goal: string;
+
+  /** Nível de formalidade: Informal, Equilibrado, Formal */
+  @Column({ nullable: true })
+  formality: string;
+
+  /** Tamanho das respostas: Curtas, Médias, Detalhadas */
+  @Column({ name: 'response_length', nullable: true })
+  responseLength: string;
+
+  /** Diferenciais do produto/serviço */
+  @Column({ type: 'text', nullable: true })
+  differentials: string;
+
+  /** Fatores que influenciam o preço */
+  @Column({ name: 'pricing_factors', type: 'text', nullable: true })
+  pricingFactors: string;
+
+  /** Região de atendimento */
+  @Column({ nullable: true })
+  region: string;
+
+  /** Mensagem inicial personalizada */
+  @Column({ name: 'initial_message', type: 'text', nullable: true })
+  initialMessage: string;
+
   /** Flow configuration (templates, timeouts) as JSON */
   @Column({ type: 'jsonb', nullable: true })
   flow: Record<string, any>;

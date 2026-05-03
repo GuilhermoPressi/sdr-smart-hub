@@ -10,7 +10,17 @@ import {
 } from "lucide-react";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { toast } from "sonner";
-import { shouldAiRespond } from "@/lib/ai-responder";
+
+/** Verifica se a IA deve responder esta conversa (lógica inline, sem dependência externa) */
+function shouldAiRespond(conv: { iaStatus?: string; stage?: string }): boolean {
+  if (!conv) return false;
+  const blockedStages = ["atendimento_humano", "ganho", "perdido"];
+  if (conv.iaStatus === "Pausado") return false;
+  if (conv.iaStatus === "Vendedor assumiu") return false;
+  if (conv.iaStatus === "Negócio fechado") return false;
+  if (conv.stage && blockedStages.includes(conv.stage)) return false;
+  return true;
+}
 
 interface Conversation {
   id: string;

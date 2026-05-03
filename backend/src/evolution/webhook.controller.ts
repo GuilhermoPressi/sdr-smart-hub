@@ -82,7 +82,7 @@ export class WebhookController {
 
     if (!text.trim()) return { received: true, ignored: true };
 
-    this.logger.log(`📩 Nova mensagem de ${phone}: "${text.substring(0, 60)}..."`);
+    this.logger.log(`📩 Nova mensagem de ${phone}: "${text.substring(0, 60)}${text.length > 60 ? '...' : ''}"`);
 
     // Dedup check
     if (await this.messagesSvc.existsByWaId(waMessageId)) {
@@ -145,42 +145,70 @@ export class WebhookController {
       status: 'Em conversa',
     });
 
-    // Check if IA should respond
-    if (
-      contact.iaStatus === 'Pausado' ||
-      contact.iaStatus === 'Vendedor assumiu' ||
-      contact.iaStatus === 'Negócio fechado'
-    ) {
-      this.logger.log(`IA pausada para ${contact.name}, não respondendo.`);
-      return { received: true, iaSkipped: true };
+    // ── Check if IA should respond ──────────────────────────────────────
+    // Stages bloqueados: IA NÃO responde
+    const blockedStages = ['atendimento_humano', 'ganho', 'perdido'];
+    if (blockedStages.includes(contact.stage)) {
+      this.logger.log(`⏸️ IA não responde — stage bloqueado: ${contact.stage} (contato: ${contact.name})`);
+      return { received: true, iaSkipped: true, reason: 'blocked_stage' };
     }
 
-    // Get AI config
+    // iaStatus bloqueados: IA NÃO responde
+    const blockedIaStatuses = ['Pausado', 'Vendedor assumiu', 'Negócio fechado'];
+    if (blockedIaStatuses.includes(contact.iaStatus)) {
+      this.logger.log(`⏸️ IA pausada/bloqueada para ${contact.name} (iaStatus: ${contact.iaStatus})`);
+      return { received: true, iaSkipped: true, reason: 'ia_paused' };
+    }
+
+    // ── Get AI config ───────────────────────────────────────────────────
     const aiConfig = await this.aiConfigSvc.findActive();
     if (!aiConfig) {
-      this.logger.warn('Nenhuma configuração de IA ativa encontrada.');
+      this.logger.warn('⚠️ Nenhuma configuração de IA ativa encontrada. Mensagem salva, mas sem resposta automática.');
       return { received: true, noConfig: true };
     }
 
-    // Get conversation history
+    this.logger.log(`🤖 IA "${aiConfig.displayName || aiConfig.internalName}" processando mensagem de ${contact.name}...`);
+
+    // ── Get conversation history ────────────────────────────────────────
     const history = await this.messagesSvc.findByContact(contact.id, 20);
 
-    // Generate IA response
-    const aiResponse = await this.openaiSvc.generateResponse(
-      aiConfig,
-      contact,
-      history,
-    );
+    // ── Generate IA response (with failsafe) ────────────────────────────
+    let aiResponse: string | null;
+    try {
+      aiResponse = await this.openaiSvc.generateResponse(
+        aiConfig,
+        contact,
+        history,
+      );
+    } catch (err) {
+      // FAILSAFE: Não travar o webhook, não enviar mensagem ao cliente
+      this.logger.error(`❌ Erro ao gerar resposta da IA para ${contact.name}: ${err.message || err}`);
+      this.logger.error(`Stack: ${err.stack || 'N/A'}`);
+      return { received: true, error: 'openai_failed' };
+    }
 
     if (!aiResponse) {
-      this.logger.warn('OpenAI retornou vazio.');
+      this.logger.warn(`⚠️ OpenAI retornou vazio para ${contact.name}. Não enviando resposta.`);
       return { received: true, emptyResponse: true };
     }
 
-    // Send via Evolution
-    await this.evoSvc.sendText(instanceName, phone, aiResponse);
+    // ── Send via Evolution (with failsafe) ──────────────────────────────
+    try {
+      await this.evoSvc.sendText(instanceName, phone, aiResponse);
+    } catch (err) {
+      this.logger.error(`❌ Erro ao enviar resposta via Evolution para ${phone}: ${err.message || err}`);
+      // Salva a resposta no banco mesmo se falhar o envio (para não perder)
+      await this.messagesSvc.create({
+        contactId: contact.id,
+        text: aiResponse,
+        sender: 'ia',
+        instanceName,
+        status: 'failed',
+      });
+      return { received: true, error: 'evolution_send_failed' };
+    }
 
-    // Save IA response in DB
+    // ── Save IA response in DB ──────────────────────────────────────────
     await this.messagesSvc.create({
       contactId: contact.id,
       text: aiResponse,
@@ -189,7 +217,7 @@ export class WebhookController {
       status: 'sent',
     });
 
-    this.logger.log(`🤖 IA respondeu para ${contact.name}: "${aiResponse.substring(0, 60)}..."`);
+    this.logger.log(`🤖 IA respondeu para ${contact.name}: "${aiResponse.substring(0, 80)}${aiResponse.length > 80 ? '...' : ''}"`);
 
     return { received: true, responded: true };
   }

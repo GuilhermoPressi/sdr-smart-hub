@@ -19,7 +19,9 @@ function sanitize(data: Partial<AiConfig>): Partial<AiConfig> {
   const allowed = [
     'id','internalName','displayName','company','segment','product','audience',
     'problem','benefit','tone','qualifiedCriteria','discovery','neverPromise',
-    'neverAsk','instructions','flow','evolutionInstance','companyId','userId','active',
+    'neverAsk','instructions','goal','formality','responseLength','differentials',
+    'pricingFactors','region','initialMessage','flow','evolutionInstance',
+    'companyId','userId','active',
   ];
   Object.keys(clean).forEach(k => { if (!allowed.includes(k)) delete clean[k]; });
   return clean;

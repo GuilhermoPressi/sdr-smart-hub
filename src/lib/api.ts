@@ -56,9 +56,8 @@ export const api = {
   getAiConfigs: () => request<any[]>('/ai-config'),
   getActiveAiConfig: () => request<any>('/ai-config/active'),
   saveAiConfig: (data: any) => {
-    // Limpa campos que não devem ir para o backend
-    const { id, built, goalPreset, goal, differentials, pricingFactors, formality,
-            responseLength, initialMessage, evolutionInitialMsg, region, ...clean } = data;
+    // Limpa campos que são APENAS do frontend (não existem no backend)
+    const { id, built, goalPreset, evolutionInitialMsg, ...clean } = data;
     // UUID válido = 36 chars com hífens
     const isValidId = id && typeof id === 'string' && id.length === 36 && id.includes('-');
     const payload = { ...clean, tone: clean.tone || 'Profissional' };
