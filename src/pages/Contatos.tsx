@@ -211,8 +211,8 @@ export default function Contatos() {
   return (
     <>
       <div className="space-y-5">
-        <div className="glass-card rounded-2xl p-4 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
-          <div className="relative flex-1 min-w-[200px]">
+        <div className="glass-card rounded-2xl p-4 flex flex-col sm:flex-row flex-wrap gap-3 items-stretch sm:items-center">
+          <div className="relative flex-1 min-w-[200px] w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome, e-mail, empresa..." className="pl-9" />
           </div>

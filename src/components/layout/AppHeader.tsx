@@ -1,8 +1,10 @@
 import { useLocation } from "react-router-dom";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useApp } from "@/store/app";
 import { api } from "@/lib/api";
-import { Bell, ShieldCheck } from "lucide-react";
+import { Bell, ShieldCheck, Menu } from "lucide-react";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { SidebarContent } from "./AppSidebar";
 
 const titles: Record<string, { title: string; subtitle: string }> = {
   "/configurar-ia": { title: "Configurar IA de Atendimento", subtitle: "Crie sua IA SDR em poucos minutos. Sem prompts complicados." },
@@ -17,6 +19,7 @@ export function AppHeader() {
   const { pathname } = useLocation();
   const meta = titles[pathname] || { title: "LeadFlow", subtitle: "Plataforma SDR" };
   const { connections, ai, setConnection } = useApp();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Poll Evolution status a cada 15s
   useEffect(() => {
@@ -40,12 +43,23 @@ export function AppHeader() {
 
   return (
     <header className="sticky top-0 z-30 border-b border-border-subtle bg-background/70 backdrop-blur-xl">
-      <div className="flex items-center gap-4 px-6 lg:px-10 py-4">
+      <div className="flex items-center gap-3 md:gap-4 px-4 md:px-6 lg:px-10 py-3 md:py-4">
+        <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+          <SheetTrigger asChild>
+            <button className="md:hidden h-10 w-10 shrink-0 grid place-items-center rounded-xl border border-border-subtle bg-surface/60 text-muted-foreground hover:text-foreground transition-colors">
+              <Menu className="h-5 w-5" />
+            </button>
+          </SheetTrigger>
+          <SheetContent side="left" className="p-0 w-[280px] flex flex-col bg-sidebar/95 backdrop-blur-xl border-r-border-subtle">
+            <SidebarContent onNavigate={() => setMobileMenuOpen(false)} />
+          </SheetContent>
+        </Sheet>
+
         <div className="min-w-0 flex-1">
-          <h1 className="font-display text-xl md:text-2xl font-semibold text-foreground truncate">
+          <h1 className="font-display text-lg md:text-xl lg:text-2xl font-semibold text-foreground truncate">
             {meta.title}
           </h1>
-          <p className="text-sm text-muted-foreground truncate">{meta.subtitle}</p>
+          <p className="text-xs md:text-sm text-muted-foreground truncate">{meta.subtitle}</p>
         </div>
 
         <div className="hidden lg:flex items-center gap-2">
@@ -66,7 +80,7 @@ export function AppHeader() {
           <Bell className="h-4 w-4" />
         </button>
 
-        <div className="flex items-center gap-3 rounded-xl border border-border-subtle bg-surface/60 pl-3 pr-2 py-1.5">
+        <div className="hidden md:flex items-center gap-3 rounded-xl border border-border-subtle bg-surface/60 pl-3 pr-2 py-1.5">
           <div className="hidden sm:block text-right leading-tight">
             <p className="text-xs font-medium text-foreground">Você</p>
             <p className="text-[10px] text-muted-foreground flex items-center gap-1 justify-end">

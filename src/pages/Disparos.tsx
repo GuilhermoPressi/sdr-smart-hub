@@ -235,7 +235,7 @@ export default function Disparos() {
       {step === 1 && (
         <div className="glass-card rounded-2xl p-6 border-border-subtle space-y-5">
           <div><h3 className="font-display font-semibold">Selecionar Leads</h3><p className="text-xs text-muted-foreground mt-1">Escolha de onde virão os contatos.</p></div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {([
               { key: "crm" as const, icon: Users, label: "Contatos do CRM" },
               { key: "tag" as const, icon: Tag, label: "Filtrar por tag" },

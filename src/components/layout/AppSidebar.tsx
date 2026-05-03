@@ -15,12 +15,12 @@ const items = [
   { to: "/logs-ia", label: "Logs da IA", icon: ScrollText },
 ];
 
-export function AppSidebar() {
+export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { pathname } = useLocation();
   const { active: watcherActive } = useAiWatcher();
 
   return (
-    <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-border-subtle bg-sidebar/80 backdrop-blur-xl">
+    <>
       <div className="px-6 py-6 flex items-center gap-3">
         <div className="h-10 w-10 rounded-xl bg-gradient-primary grid place-items-center shadow-glow">
           <Sparkles className="h-5 w-5 text-primary-foreground" />
@@ -40,6 +40,7 @@ export function AppSidebar() {
             <NavLink
               key={item.to}
               to={item.to}
+              onClick={onNavigate}
               className={cn(
                 "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-300",
                 active
@@ -77,6 +78,14 @@ export function AppSidebar() {
             : "Configure uma IA de atendimento para ativar as respostas automáticas."}
         </p>
       </div>
+    </>
+  );
+}
+
+export function AppSidebar() {
+  return (
+    <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-border-subtle bg-sidebar/80 backdrop-blur-xl">
+      <SidebarContent />
     </aside>
   );
 }
