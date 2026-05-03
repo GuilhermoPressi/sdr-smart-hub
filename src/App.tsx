@@ -14,6 +14,7 @@ import Conversas from "./pages/Conversas";
 import NotFound from "./pages/NotFound.tsx";
 import { useAiWatcher } from "@/hooks/use-ai-watcher";
 import LogsIA from "./pages/LogsIA";
+import Disparos from "./pages/Disparos";
 
 const queryClient = new QueryClient();
 
@@ -40,6 +41,7 @@ const App = () => (
               <Route path="/contatos" element={<Contatos />} />
               <Route path="/crm" element={<CRM />} />
               <Route path="/conversas" element={<Conversas />} />
+              <Route path="/disparos" element={<Disparos />} />
               <Route path="/logs-ia" element={<LogsIA />} />
             </Route>
             <Route path="*" element={<NotFound />} />

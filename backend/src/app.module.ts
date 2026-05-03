@@ -6,10 +6,13 @@ import { AiConfigModule } from './ai-config/ai-config.module';
 import { EvolutionModule } from './evolution/evolution.module';
 import { OpenaiModule } from './openai/openai.module';
 import { ContactsModule } from './contacts/contacts.module';
+import { CampaignsModule } from './campaigns/campaigns.module';
 import { Contact } from './contacts/entities/contact.entity';
 import { ApifyLeadSearch } from './apify-leads/entities/apify-lead-search.entity';
 import { Message } from './messages/entities/message.entity';
 import { AiConfig } from './ai-config/entities/ai-config.entity';
+import { Campaign } from './campaigns/entities/campaign.entity';
+import { CampaignRecipient } from './campaigns/entities/campaign-recipient.entity';
 
 @Module({
   imports: [
@@ -20,7 +23,7 @@ import { AiConfig } from './ai-config/entities/ai-config.entity';
       username: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASS || 'postgres',
       database: process.env.DB_NAME || 'sdr_smart_hub',
-      entities: [Contact, ApifyLeadSearch, Message, AiConfig],
+      entities: [Contact, ApifyLeadSearch, Message, AiConfig, Campaign, CampaignRecipient],
       synchronize: true,
       ssl: false,
     }),
@@ -30,6 +33,7 @@ import { AiConfig } from './ai-config/entities/ai-config.entity';
     EvolutionModule,
     OpenaiModule,
     ContactsModule,
+    CampaignsModule,
   ],
 })
 export class AppModule {}

@@ -10,6 +10,7 @@ const titles: Record<string, { title: string; subtitle: string }> = {
   "/criar-lista": { title: "Criar Lista de Leads", subtitle: "Encontre leads qualificados em minutos." },
   "/contatos": { title: "Contatos", subtitle: "Organize, marque e envie para o CRM." },
   "/crm": { title: "CRM", subtitle: "Acompanhe cada lead até a proposta." },
+  "/disparos": { title: "Disparos", subtitle: "Envie mensagens em massa para seus leads." },
 };
 
 export function AppHeader() {

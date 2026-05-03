@@ -100,6 +100,17 @@ export const api = {
   getInstanceStatus: (instanceName: string) => request<any>(`/evolution/instances/${instanceName}/status`),
   deleteInstance: (instanceName: string) =>
     request<any>(`/evolution/instances/${instanceName}`, { method: 'DELETE' }),
+
+  // Campaigns (Disparos)
+  getCampaigns: () => request<any[]>('/campaigns'),
+  getCampaign: (id: string) => request<any>(`/campaigns/${id}`),
+  getCampaignRecipients: (id: string) => request<any[]>(`/campaigns/${id}/recipients`),
+  createCampaign: (data: any) =>
+    request<any>('/campaigns', { method: 'POST', body: JSON.stringify(data) }),
+  startCampaign: (id: string) =>
+    request<any>(`/campaigns/${id}/start`, { method: 'PATCH' }),
+  pauseCampaign: (id: string) =>
+    request<any>(`/campaigns/${id}/pause`, { method: 'PATCH' }),
 };
 
 // Retrocompat para código que ainda usa evolutionApi
