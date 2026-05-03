@@ -5,8 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
-  Search, Send, Bot, User, Check, CheckCheck,
-  ArrowLeft, PauseCircle, PlayCircle, MessageSquare, Zap,
+  Search, Send, Bot, User, Check, CheckCheck, AlertTriangle,
+  ArrowLeft, PauseCircle, PlayCircle, MessageSquare, Zap, UserCheck,
 } from "lucide-react";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { toast } from "sonner";
@@ -32,6 +32,9 @@ interface Conversation {
   lastMessageSender: string;
   lastMessageAt: string;
   unreadCount: number;
+  waitingHumanReply?: boolean;
+  handoffReason?: string;
+  handoffAt?: string;
 }
 
 interface Message {
@@ -168,10 +171,18 @@ export default function Conversas() {
     }
   }
 
-  const filtered = conversations.filter((c) => {
-    const q = search.toLowerCase();
-    return (c.name || "").toLowerCase().includes(q) || (c.phone || "").includes(q);
-  });
+  const filtered = conversations
+    .filter((c) => {
+      const q = search.toLowerCase();
+      return (c.name || "").toLowerCase().includes(q) || (c.phone || "").includes(q);
+    })
+    .sort((a, b) => {
+      // Aguardando atendente sempre no topo
+      if (a.waitingHumanReply && !b.waitingHumanReply) return -1;
+      if (!a.waitingHumanReply && b.waitingHumanReply) return 1;
+      // Depois por data
+      return new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime();
+    });
 
   return (
     <div className="h-[calc(100vh-8rem)] min-h-[600px] flex gap-4">
@@ -207,6 +218,7 @@ export default function Conversas() {
                 className={cn(
                   "w-full text-left p-4 border-b border-border-subtle transition-colors hover:bg-surface-elevated flex gap-3 items-start",
                   activeId === conv.id && "bg-primary/5 hover:bg-primary/5",
+                  conv.waitingHumanReply && "bg-amber-500/5 border-l-2 border-l-amber-500",
                 )}>
                 {/* Avatar */}
                 <div className="h-10 w-10 rounded-full bg-surface-elevated grid place-items-center shrink-0 border border-border-subtle">
@@ -229,8 +241,15 @@ export default function Conversas() {
                       {conv.lastMessageText || "Sem mensagens"}
                     </p>
                     <div className="flex items-center gap-1 shrink-0">
+                      {/* Badge aguardando atendente */}
+                      {conv.waitingHumanReply && (
+                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/20 text-[9px] font-medium text-amber-400" title={`Handoff: ${conv.handoffReason || 'keyword'}`}>
+                          <AlertTriangle className="h-2.5 w-2.5" />
+                          Aguardando
+                        </span>
+                      )}
                       {/* Badge IA ativa */}
-                      {shouldAiRespond(conv) && agents.length > 0 && (
+                      {!conv.waitingHumanReply && shouldAiRespond(conv) && agents.length > 0 && (
                         <span title="IA respondendo automaticamente">
                           <Zap className="h-3 w-3 text-primary" />
                         </span>
@@ -270,21 +289,28 @@ export default function Conversas() {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
+              {/* Handoff badge */}
+              {activeConv.waitingHumanReply && (
+                <div className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-2.5 py-1 animate-pulse">
+                  <AlertTriangle className="h-3 w-3" />
+                  Aguardando atendente
+                </div>
+              )}
               {/* IA status badge */}
-              {shouldAiRespond(activeConv) && agents.length > 0 ? (
+              {!activeConv.waitingHumanReply && shouldAiRespond(activeConv) && agents.length > 0 ? (
                 <div className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-success bg-success/10 border border-success/20 rounded-full px-2.5 py-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
                   {activeAiName} ativa
                 </div>
-              ) : activeConv.iaStatus === "Pausado" ? (
+              ) : !activeConv.waitingHumanReply && activeConv.iaStatus === "Pausado" ? (
                 <StatusBadge variant="warning" dot className="text-[10px] hidden sm:flex">IA pausada</StatusBadge>
               ) : null}
-              <Button variant={activeConv.iaStatus === "Pausado" ? "default" : "outline"}
+              <Button variant={activeConv.iaStatus === "Pausado" || activeConv.iaStatus === "Vendedor assumiu" ? "default" : "outline"}
                 size="sm" className={cn("h-8 text-xs gap-1.5",
-                  activeConv.iaStatus === "Pausado" ? "bg-warning text-warning-foreground hover:bg-warning/90" : ""
+                  activeConv.iaStatus === "Pausado" || activeConv.iaStatus === "Vendedor assumiu" ? "bg-warning text-warning-foreground hover:bg-warning/90" : ""
                 )}
                 onClick={handleToggleIA}>
-                {activeConv.iaStatus === "Pausado"
+                {activeConv.iaStatus === "Pausado" || activeConv.iaStatus === "Vendedor assumiu"
                   ? <><PlayCircle className="h-3.5 w-3.5" /> Retomar IA</>
                   : <><PauseCircle className="h-3.5 w-3.5" /> Pausar IA</>}
               </Button>
@@ -337,10 +363,10 @@ export default function Conversas() {
 
           {/* Input */}
           <div className="p-4 border-t border-border-subtle bg-surface/50 shrink-0">
-            {activeConv.iaStatus === "Pausado" ? (
+            {activeConv.iaStatus === "Pausado" || activeConv.iaStatus === "Vendedor assumiu" ? (
               <form onSubmit={handleSend} className="flex gap-2">
                 <Input value={inputValue} onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="Você assumiu o controle — escreva sua mensagem..."
+                  placeholder={activeConv.waitingHumanReply ? "O lead está aguardando — responda agora..." : "Você assumiu o controle — escreva sua mensagem..."}
                   className="flex-1 bg-background text-sm" />
                 <Button type="submit" disabled={!inputValue.trim() || isSending}
                   className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground shrink-0">

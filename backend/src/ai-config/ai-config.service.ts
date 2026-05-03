@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AiConfig } from './entities/ai-config.entity';
@@ -30,6 +30,8 @@ function sanitize(data: Partial<AiConfig>): Partial<AiConfig> {
 
 @Injectable()
 export class AiConfigService {
+  private readonly logger = new Logger(AiConfigService.name);
+
   constructor(
     @InjectRepository(AiConfig)
     private readonly repo: Repository<AiConfig>,
@@ -76,6 +78,7 @@ export class AiConfigService {
 
   async delete(id: string): Promise<void> {
     if (!isValidUuid(id)) throw new BadRequestException('ID inválido');
-    await this.repo.delete(id);
+    const result = await this.repo.delete(id);
+    this.logger.log(`🗑️ IA deletada com id ${id} (affected: ${result.affected})`);
   }
 }

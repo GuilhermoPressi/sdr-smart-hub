@@ -155,11 +155,36 @@ export class WebhookController {
         const lowerText = text.toLowerCase();
         const matched = rules.transferKeywords.find(kw => lowerText.includes(kw.toLowerCase()));
         if (matched) {
-          this.logger.log(`🔀 Keyword de transferência detectada: "${matched}" → pausando IA`);
+          this.logger.log(`🔀 Keyword de transferência detectada: "${matched}"`);
+
+          // 1. Send handoff message BEFORE pausing
+          const handoffMsg = 'Perfeito, vou te encaminhar agora para um dos nossos especialistas. Ele já vai continuar o atendimento por aqui.';
+          try {
+            await this.evoSvc.sendText(instanceName, phone, handoffMsg);
+            this.logger.log(`📤 Mensagem de handoff enviada para ${phone}`);
+          } catch (err) {
+            this.logger.error(`❌ Erro ao enviar mensagem de handoff: ${err.message}`);
+          }
+
+          // 2. Save handoff message in history
+          await this.messagesSvc.create({
+            contactId: contact.id,
+            text: handoffMsg,
+            sender: 'ia',
+            instanceName,
+            status: 'sent',
+          });
+
+          // 3. Update contact: pause IA + set handoff tracking
           await this.contactRepo.update(contact.id, {
             iaStatus: 'Vendedor assumiu',
             stage: 'atendimento_humano',
+            waitingHumanReply: true,
+            handoffReason: matched,
+            handoffAt: new Date(),
           });
+
+          this.logger.log(`👤 Conversa ${contact.name} marcada como aguardando atendente (keyword: "${matched}")`);
           return { received: true, transferred: true, keyword: matched };
         }
       }

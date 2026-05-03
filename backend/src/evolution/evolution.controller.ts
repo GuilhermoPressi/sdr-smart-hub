@@ -71,8 +71,13 @@ export class EvolutionController {
         status: 'sent',
       });
 
-      // Atualiza lastInteraction
-      await this.contactRepo.update(contact.id, { lastInteraction: new Date() });
+      // Atualiza lastInteraction + limpa alerta de handoff se existir
+      const updates: any = { lastInteraction: new Date() };
+      if (contact.waitingHumanReply) {
+        updates.waitingHumanReply = false;
+        this.logger.log(`✅ Atendente respondeu para ${contact.name} — alerta de handoff removido`);
+      }
+      await this.contactRepo.update(contact.id, updates);
 
       this.logger.log(`Mensagem humana salva → contato ${contact.name} (${phone})`);
     } else {

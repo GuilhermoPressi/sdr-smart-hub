@@ -88,12 +88,23 @@ export default function ConfigurarIA() {
     }
   };
 
-  const handleDelete = (e: React.MouseEvent, id: string) => {
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (confirm("Tem certeza que deseja excluir esta IA?")) {
+    if (!confirm("Tem certeza que deseja excluir esta IA?")) return;
+    try {
+      // 1. Delete from backend (real DB delete)
+      await api.deleteAiConfig(id);
+      // 2. Remove from local state immediately
       deleteAgent(id);
       if (activeConfigId === id) setActiveConfigId(null);
-      toast.success("IA excluída.");
+      // 3. Re-fetch from backend to guarantee consistency
+      const configs = await api.getAiConfigs();
+      // Clear all local agents and reload
+      (configs || []).forEach((c: any) => saveAgent(c));
+      toast.success("IA excluída com sucesso.");
+    } catch (err) {
+      toast.error("Erro ao excluir IA. Tente novamente.");
+      console.error("[AI] Erro ao deletar:", err);
     }
   };
 

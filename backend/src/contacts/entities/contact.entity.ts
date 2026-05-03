@@ -90,6 +90,19 @@ export class Contact {
   /** Etapa atual do fluxo de conversa (id do ConversationStep) */
   @Column({ name: 'conversation_stage', nullable: true })
   conversationStage: string;
+
+  /** True quando IA fez handoff e aguarda atendente humano */
+  @Column({ name: 'waiting_human_reply', default: false })
+  waitingHumanReply: boolean;
+
+  /** Motivo do handoff (keyword detectada) */
+  @Column({ name: 'handoff_reason', nullable: true })
+  handoffReason: string;
+
+  /** Timestamp de quando o handoff aconteceu */
+  @Column({ name: 'handoff_at', nullable: true })
+  handoffAt: Date;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
