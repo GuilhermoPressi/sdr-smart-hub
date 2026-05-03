@@ -92,19 +92,27 @@ export default function ConfigurarIA() {
     e.stopPropagation();
     if (!confirm("Tem certeza que deseja excluir esta IA?")) return;
     try {
-      // 1. Delete from backend (real DB delete)
-      await api.deleteAiConfig(id);
+      // 1. Delete from backend
+      const result = await api.deleteAiConfig(id);
+      console.log("[AI] Delete result:", result);
       // 2. Remove from local state immediately
       deleteAgent(id);
       if (activeConfigId === id) setActiveConfigId(null);
-      // 3. Re-fetch from backend to guarantee consistency
-      const configs = await api.getAiConfigs();
-      // Clear all local agents and reload
-      (configs || []).forEach((c: any) => saveAgent(c));
       toast.success("IA excluída com sucesso.");
+      // 3. Re-fetch to sync (deleteAgent already removed it locally)
+      try {
+        const configs = await api.getAiConfigs();
+        // Replace entire agents list with fresh data from backend
+        const currentIds = (configs || []).map((c: any) => c.id);
+        // Remove any local agents that no longer exist on backend
+        agents.forEach(a => {
+          if (!currentIds.includes(a.id)) deleteAgent(a.id);
+        });
+        (configs || []).forEach((c: any) => saveAgent(c));
+      } catch { /* silent re-fetch failure is ok, local state is already correct */ }
     } catch (err) {
-      toast.error("Erro ao excluir IA. Tente novamente.");
       console.error("[AI] Erro ao deletar:", err);
+      toast.error("Erro ao excluir IA. Tente novamente.");
     }
   };
 

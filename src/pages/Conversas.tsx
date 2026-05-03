@@ -159,13 +159,40 @@ export default function Conversas() {
 
   async function handleToggleIA() {
     if (!activeConv) return;
-    const newStatus = activeConv.iaStatus === "Pausado" ? "Aguardando" : "Pausado";
+
+    // Determine if IA is currently stopped (any blocked state)
+    const isStopped = activeConv.iaStatus === "Pausado"
+      || activeConv.iaStatus === "Vendedor assumiu"
+      || activeConv.stage === "atendimento_humano";
+
     try {
-      await api.updateContact(activeConv.id, { iaStatus: newStatus });
-      setConversations((prev) =>
-        prev.map((c) => (c.id === activeConv.id ? { ...c, iaStatus: newStatus } : c))
-      );
-      toast.success(newStatus === "Pausado" ? "IA pausada para este contato" : "IA retomada");
+      if (isStopped) {
+        // RESUMING IA: reset everything back to IA active
+        const updates: Record<string, any> = {
+          iaStatus: "Em qualificação",
+          stage: "atendimento_ia",
+          waitingHumanReply: false,
+          handoffReason: null,
+          handoffAt: null,
+        };
+        await api.updateContact(activeConv.id, updates);
+        setConversations((prev) =>
+          prev.map((c) => (c.id === activeConv.id
+            ? { ...c, ...updates, waitingHumanReply: false, handoffReason: undefined, handoffAt: undefined }
+            : c))
+        );
+        toast.success("IA retomada! Novas mensagens serão respondidas automaticamente.");
+      } else {
+        // PAUSING IA
+        const updates: Record<string, any> = {
+          iaStatus: "Pausado",
+        };
+        await api.updateContact(activeConv.id, updates);
+        setConversations((prev) =>
+          prev.map((c) => (c.id === activeConv.id ? { ...c, ...updates } : c))
+        );
+        toast.success("IA pausada para este contato.");
+      }
     } catch {
       toast.error("Erro ao alterar IA");
     }

@@ -38,7 +38,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const msg = Array.isArray(body?.message) ? body.message.join(', ') : (body?.message || `Erro ${res.status}`);
     throw new Error(msg);
   }
-  return res.json();
+  // Handle empty responses (204 No Content or empty body)
+  const text = await res.text();
+  if (!text) return {} as T;
+  return JSON.parse(text);
 }
 
 // ── API unificada (tudo em um objeto, import estático) ────────────────────

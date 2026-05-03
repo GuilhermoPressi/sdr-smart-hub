@@ -42,7 +42,8 @@ export class AiConfigController {
   }
 
   @Delete(':id')
-  delete(@Param('id') id: string): Promise<void> {
-    return this.svc.delete(id);
+  async delete(@Param('id') id: string) {
+    await this.svc.delete(id);
+    return { success: true, deletedId: id };
   }
 }
