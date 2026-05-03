@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   Search, Send, Bot, User, Check, CheckCheck,
-  ArrowLeft, PauseCircle, PlayCircle, MessageSquare,
+  ArrowLeft, PauseCircle, PlayCircle, MessageSquare, Zap,
 } from "lucide-react";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { toast } from "sonner";
+import { shouldAiRespond } from "@/lib/ai-responder";
 
 interface Conversation {
   id: string;
@@ -46,7 +47,8 @@ function formatFullTime(iso: string): string {
 }
 
 export default function Conversas() {
-  const { updateLead } = useApp();
+  const { updateLead, agents } = useApp();
+  const activeAiName = agents[0]?.displayName || agents[0]?.internalName || "IA";
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -216,11 +218,19 @@ export default function Conversas() {
                       {conv.lastMessageSender !== "lead" && <span className="mr-1 opacity-60">Você:</span>}
                       {conv.lastMessageText || "Sem mensagens"}
                     </p>
-                    {conv.unreadCount > 0 && (
-                      <span className="shrink-0 h-4 min-w-4 px-1 rounded-full bg-destructive text-[9px] font-bold text-white grid place-items-center">
-                        {conv.unreadCount > 9 ? "9+" : conv.unreadCount}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {/* Badge IA ativa */}
+                      {shouldAiRespond(conv) && agents.length > 0 && (
+                        <span title="IA respondendo automaticamente">
+                          <Zap className="h-3 w-3 text-primary" />
+                        </span>
+                      )}
+                      {conv.unreadCount > 0 && (
+                        <span className="h-4 min-w-4 px-1 rounded-full bg-destructive text-[9px] font-bold text-white grid place-items-center">
+                          {conv.unreadCount > 9 ? "9+" : conv.unreadCount}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </button>
@@ -251,9 +261,14 @@ export default function Conversas() {
 
             <div className="flex items-center gap-2 shrink-0">
               {/* IA status badge */}
-              {activeConv.iaStatus === "Pausado" && (
+              {shouldAiRespond(activeConv) && agents.length > 0 ? (
+                <div className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-success bg-success/10 border border-success/20 rounded-full px-2.5 py-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+                  {activeAiName} ativa
+                </div>
+              ) : activeConv.iaStatus === "Pausado" ? (
                 <StatusBadge variant="warning" dot className="text-[10px] hidden sm:flex">IA pausada</StatusBadge>
-              )}
+              ) : null}
               <Button variant={activeConv.iaStatus === "Pausado" ? "default" : "outline"}
                 size="sm" className={cn("h-8 text-xs gap-1.5",
                   activeConv.iaStatus === "Pausado" ? "bg-warning text-warning-foreground hover:bg-warning/90" : ""
@@ -322,6 +337,16 @@ export default function Conversas() {
                   <Send className="h-4 w-4" />
                 </Button>
               </form>
+            ) : shouldAiRespond(activeConv) && agents.length > 0 ? (
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <div className="flex items-center justify-center h-7 w-7 rounded-full bg-primary/10 shrink-0">
+                  <Bot className="h-3.5 w-3.5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">{activeAiName} está respondendo automaticamente</p>
+                  <p className="text-muted-foreground/70">Clique em <strong>Pausar IA</strong> para assumir o controle da conversa.</p>
+                </div>
+              </div>
             ) : (
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
                 <Bot className="h-4 w-4 text-primary shrink-0" />

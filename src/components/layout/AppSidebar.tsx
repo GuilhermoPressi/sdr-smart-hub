@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { Bot, MessageCircle, ListPlus, Users, KanbanSquare, Sparkles, MessageSquare, LayoutDashboard } from "lucide-react";
+import { Bot, MessageCircle, ListPlus, Users, KanbanSquare, Sparkles, MessageSquare, LayoutDashboard, ScrollText } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAiWatcher } from "@/hooks/use-ai-watcher";
 
 const items = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -10,10 +11,13 @@ const items = [
   { to: "/contatos", label: "Contatos", icon: Users },
   { to: "/conversas", label: "Conversas", icon: MessageSquare },
   { to: "/crm", label: "CRM", icon: KanbanSquare },
+  { to: "/logs-ia", label: "Logs da IA", icon: ScrollText },
 ];
 
 export function AppSidebar() {
   const { pathname } = useLocation();
+  const { active: watcherActive } = useAiWatcher();
+
   return (
     <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-border-subtle bg-sidebar/80 backdrop-blur-xl">
       <div className="px-6 py-6 flex items-center gap-3">
@@ -30,6 +34,7 @@ export function AppSidebar() {
         {items.map((item) => {
           const active = pathname.startsWith(item.to);
           const Icon = item.icon;
+          const isLogs = item.to === "/logs-ia";
           return (
             <NavLink
               key={item.to}
@@ -43,19 +48,32 @@ export function AppSidebar() {
             >
               <Icon className={cn("h-4 w-4 transition-colors", active ? "text-primary" : "")} />
               <span className="font-medium">{item.label}</span>
-              {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary animate-pulse-glow" />}
+              {/* Indicador pulsante de IA ativa nos logs */}
+              {isLogs && watcherActive && (
+                <span className="ml-auto h-2 w-2 rounded-full bg-success animate-pulse" title="IA respondendo automaticamente" />
+              )}
+              {active && !isLogs && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary animate-pulse-glow" />}
             </NavLink>
           );
         })}
       </nav>
 
       <div className="m-3 rounded-2xl border border-border-subtle bg-surface/60 p-4">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-warning" />
-          Modo demonstração
-        </div>
+        {watcherActive ? (
+          <div className="flex items-center gap-2 text-xs text-success mb-1">
+            <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+            IA respondendo automaticamente
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+            <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+            Nenhuma IA configurada
+          </div>
+        )}
         <p className="text-xs text-muted-foreground/80 leading-relaxed">
-          Nenhuma integração real foi ativada nesta versão visual.
+          {watcherActive
+            ? "Monitorando conversas e respondendo leads automaticamente."
+            : "Configure uma IA de atendimento para ativar as respostas automáticas."}
         </p>
       </div>
     </aside>
