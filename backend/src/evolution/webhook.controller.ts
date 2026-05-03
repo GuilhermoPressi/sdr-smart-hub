@@ -283,6 +283,23 @@ export class WebhookController {
 
     this.logger.log(`🤖 IA respondeu ${contact.name} [stage: ${contact.conversationStage || '-'}]: "${aiResponse.substring(0, 80)}..."`);
 
+    // ── 10. Handle handoff stage — pause IA after sending reply ──────────
+    const isHandoff = contact.conversationStage === 'handoff'
+      || contact.conversationStage === 'atendimento_humano';
+
+    if (isHandoff) {
+      await this.contactRepo.update(contact.id, {
+        iaStatus: 'Vendedor assumiu',
+        stage: 'atendimento_humano',
+        waitingHumanReply: true,
+        handoffReason: 'IA sugeriu handoff',
+        handoffAt: new Date(),
+      });
+      this.logger.log(`🔀 Handoff aplicado pela IA para ${contact.name}`);
+      this.logger.log(`⏸️ IA pausada após handoff — conversa aguardando atendente`);
+      return { received: true, responded: true, stage: 'handoff', handoff: true };
+    }
+
     return { received: true, responded: true, stage: contact.conversationStage };
   }
 
