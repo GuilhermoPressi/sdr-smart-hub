@@ -1,10 +1,15 @@
-import { Controller, Get, Post, Delete, Param, Body, Logger, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Body, Logger, NotFoundException, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EvolutionService } from './evolution.service';
 import { MessagesService } from '../messages/messages.service';
 import { Contact } from '../contacts/entities/contact.entity';
+import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
 
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('evolution')
 export class EvolutionController {
   private readonly logger = new Logger(EvolutionController.name);
@@ -16,6 +21,7 @@ export class EvolutionController {
     private readonly contactRepo: Repository<Contact>,
   ) {}
 
+  @Roles(UserRole.ADMIN)
   @Post('instances')
   async createInstance(@Body() body: { instanceName: string; webhookUrl?: string }) {
     return this.evo.createInstance(body.instanceName, body.webhookUrl);
@@ -36,6 +42,7 @@ export class EvolutionController {
     return this.evo.getConnectionState(name);
   }
 
+  @Roles(UserRole.ADMIN)
   @Delete('instances/:name')
   async deleteInstance(@Param('name') name: string) {
     return this.evo.deleteInstance(name);

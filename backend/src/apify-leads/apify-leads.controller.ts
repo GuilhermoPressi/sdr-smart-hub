@@ -1,7 +1,13 @@
-import { Controller, Post, Get, Param, Body, NotFoundException, Request } from '@nestjs/common';
+import { Controller, Post, Get, Param, Body, NotFoundException, Request, UseGuards } from '@nestjs/common';
 import { ApifyLeadsService } from './apify-leads.service';
 import { SearchLeadsDto } from './dto/search-leads.dto';
+import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
 
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.MANAGER)
 @Controller('apify-leads')
 export class ApifyLeadsController {
   constructor(private readonly service: ApifyLeadsService) {}

@@ -2,8 +2,9 @@ import { useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useApp } from "@/store/app";
 import { api } from "@/lib/api";
-import { Bell, ShieldCheck, Menu } from "lucide-react";
+import { Bell, ShieldCheck, Menu, LogOut, User } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SidebarContent } from "./AppSidebar";
 
 const titles: Record<string, { title: string; subtitle: string }> = {
@@ -18,8 +19,13 @@ const titles: Record<string, { title: string; subtitle: string }> = {
 export function AppHeader() {
   const { pathname } = useLocation();
   const meta = titles[pathname] || { title: "LeadFlow", subtitle: "Plataforma SDR" };
-  const { connections, ai, setConnection } = useApp();
+  const { connections, ai, setConnection, user, logout } = useApp();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  function handleLogout() {
+    logout();
+    window.location.href = "/login";
+  }
 
   // Poll Evolution status a cada 15s
   useEffect(() => {
@@ -80,17 +86,28 @@ export function AppHeader() {
           <Bell className="h-4 w-4" />
         </button>
 
-        <div className="hidden md:flex items-center gap-3 rounded-xl border border-border-subtle bg-surface/60 pl-3 pr-2 py-1.5">
-          <div className="hidden sm:block text-right leading-tight">
-            <p className="text-xs font-medium text-foreground">Você</p>
-            <p className="text-[10px] text-muted-foreground flex items-center gap-1 justify-end">
-              <ShieldCheck className="h-3 w-3" /> Admin
-            </p>
-          </div>
-          <div className="h-8 w-8 rounded-lg bg-gradient-accent grid place-items-center text-xs font-semibold text-background">
-            VC
-          </div>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="hidden md:flex items-center gap-3 rounded-xl border border-border-subtle bg-surface/60 pl-3 pr-2 py-1.5 hover:bg-surface/80 transition-colors">
+              <div className="hidden sm:block text-right leading-tight">
+                <p className="text-xs font-medium text-foreground truncate max-w-[100px]">{user?.name || "Usuário"}</p>
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1 justify-end capitalize">
+                  {user?.role === "admin" ? <ShieldCheck className="h-3 w-3" /> : <User className="h-3 w-3" />}
+                  {user?.role || "attendant"}
+                </p>
+              </div>
+              <div className="h-8 w-8 rounded-lg bg-gradient-accent grid place-items-center text-xs font-semibold text-background uppercase">
+                {user?.name ? user.name.slice(0, 2) : "US"}
+              </div>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive cursor-pointer">
+              <LogOut className="mr-2 h-4 w-4" />
+              <span>Sair</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   );

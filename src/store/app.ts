@@ -156,6 +156,11 @@ interface Store {
   fetchMessages: (leadId: string) => Promise<void>;
   activeChatLeadId: string | null;
   setActiveChatLead: (id: string | null) => void;
+
+  user: { id: string; email: string; name?: string; role: 'admin' | 'manager' | 'attendant' } | null;
+  token: string | null;
+  setAuth: (user: any, token: string) => void;
+  logout: () => void;
 }
 
 const defaultAI: AIConfig = {
@@ -301,6 +306,11 @@ export const useApp = create<Store>()(
   },
   activeChatLeadId: null,
   setActiveChatLead: (id) => set({ activeChatLeadId: id }),
+
+  user: null,
+  token: null,
+  setAuth: (user, token) => set({ user, token }),
+  logout: () => set({ user: null, token: null, agents: [], leads: [], chatHistory: {}, connections: { official: "disconnected", evolution: "disconnected" } }),
     }),
     {
       name: "leadflow-store", // chave no localStorage
@@ -309,6 +319,8 @@ export const useApp = create<Store>()(
         agents: state.agents,
         ai: state.ai,
         flow: state.flow,
+        user: state.user,
+        token: state.token,
         // NÃO persiste leads (buscados do backend), chatHistory, connections
       }),
     }

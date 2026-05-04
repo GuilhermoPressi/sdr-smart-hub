@@ -3,21 +3,27 @@ import { Bot, MessageCircle, ListPlus, Users, KanbanSquare, Sparkles, MessageSqu
 import { cn } from "@/lib/utils";
 import { useAiWatcher } from "@/hooks/use-ai-watcher";
 
-const items = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/configurar-ia", label: "Configurar IA de Atendimento", icon: Bot },
-  { to: "/whatsapp", label: "Conectar WhatsApp", icon: MessageCircle },
-  { to: "/criar-lista", label: "Criar Lista", icon: ListPlus },
-  { to: "/contatos", label: "Contatos", icon: Users },
-  { to: "/conversas", label: "Conversas", icon: MessageSquare },
-  { to: "/crm", label: "CRM", icon: KanbanSquare },
-  { to: "/disparos", label: "Disparos", icon: Send },
-  { to: "/logs-ia", label: "Logs da IA", icon: ScrollText },
+import { useApp } from "@/store/app";
+
+const ALL_ITEMS = [
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin"] },
+  { to: "/configurar-ia", label: "Configurar IA de Atendimento", icon: Bot, roles: ["admin"] },
+  { to: "/whatsapp", label: "Conectar WhatsApp", icon: MessageCircle, roles: ["admin"] },
+  { to: "/criar-lista", label: "Criar Lista", icon: ListPlus, roles: ["admin", "manager"] },
+  { to: "/contatos", label: "Contatos", icon: Users, roles: ["admin", "manager", "attendant"] },
+  { to: "/conversas", label: "Conversas", icon: MessageSquare, roles: ["admin", "manager", "attendant"] },
+  { to: "/crm", label: "CRM", icon: KanbanSquare, roles: ["admin", "manager", "attendant"] },
+  { to: "/disparos", label: "Disparos", icon: Send, roles: ["admin", "manager"] },
+  { to: "/equipe", label: "Equipe e Permissões", icon: Users, roles: ["admin"] },
+  { to: "/logs-ia", label: "Logs da IA", icon: ScrollText, roles: ["admin"] },
 ];
 
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { pathname } = useLocation();
   const { active: watcherActive } = useAiWatcher();
+  const user = useApp((s) => s.user);
+
+  const items = ALL_ITEMS.filter(item => !user || item.roles.includes(user.role));
 
   return (
     <>

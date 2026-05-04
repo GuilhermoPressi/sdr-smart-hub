@@ -12,7 +12,10 @@ import { ApifyLeadSearch } from './apify-leads/entities/apify-lead-search.entity
 import { Message } from './messages/entities/message.entity';
 import { AiConfig } from './ai-config/entities/ai-config.entity';
 import { Campaign } from './campaigns/entities/campaign.entity';
+import { AuthModule } from './auth/auth.module';
 import { CampaignRecipient } from './campaigns/entities/campaign-recipient.entity';
+import { UsersModule } from './users/users.module';
+import { User } from './users/entities/user.entity';
 
 @Module({
   imports: [
@@ -23,10 +26,12 @@ import { CampaignRecipient } from './campaigns/entities/campaign-recipient.entit
       username: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASS || 'postgres',
       database: process.env.DB_NAME || 'sdr_smart_hub',
-      entities: [Contact, ApifyLeadSearch, Message, AiConfig, Campaign, CampaignRecipient],
+      entities: [Contact, ApifyLeadSearch, Message, AiConfig, Campaign, CampaignRecipient, User],
       synchronize: true,
       ssl: false,
     }),
+    AuthModule,
+    UsersModule,
     ApifyLeadsModule,
     MessagesModule,
     AiConfigModule,

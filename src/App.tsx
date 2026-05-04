@@ -15,8 +15,27 @@ import NotFound from "./pages/NotFound.tsx";
 import { useAiWatcher } from "@/hooks/use-ai-watcher";
 import LogsIA from "./pages/LogsIA";
 import Disparos from "./pages/Disparos";
+import Login from "./pages/Login";
+import Equipe from "./pages/Equipe";
+import { useApp } from "@/store/app";
 
 const queryClient = new QueryClient();
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, token } = useApp();
+  if (!token || !user) {
+    return <Navigate to="/login" replace />;
+  }
+  return <>{children}</>;
+}
+
+function PublicRoute({ children }: { children: React.ReactNode }) {
+  const { user, token } = useApp();
+  if (token && user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <>{children}</>;
+}
 
 /** Ativa o watcher de IA globalmente dentro do contexto do app */
 function AiWatcherProvider({ children }: { children: React.ReactNode }) {
@@ -32,8 +51,10 @@ const App = () => (
       <BrowserRouter>
         <AiWatcherProvider>
           <Routes>
-            <Route element={<AppLayout />}>
-              <Route path="/" element={<Navigate to="/configurar-ia" replace />} />
+            <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+            
+            <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/configurar-ia" element={<ConfigurarIA />} />
               <Route path="/whatsapp" element={<ConectarWhatsapp />} />
@@ -42,6 +63,7 @@ const App = () => (
               <Route path="/crm" element={<CRM />} />
               <Route path="/conversas" element={<Conversas />} />
               <Route path="/disparos" element={<Disparos />} />
+              <Route path="/equipe" element={<Equipe />} />
               <Route path="/logs-ia" element={<LogsIA />} />
             </Route>
             <Route path="*" element={<NotFound />} />

@@ -29,15 +29,36 @@ export interface ApifyLeadSearch {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}/api/v1${path}`;
-  const res = await fetch(url, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-  });
+  
+  // Pegar o token do store (precisamos fazer import dinâmico para evitar circular dependency caso useApp importe api.ts)
+  let token = null;
+  try {
+    const storeStr = localStorage.getItem('leadflow-store');
+    if (storeStr) {
+      const parsed = JSON.parse(storeStr);
+      token = parsed?.state?.token;
+    }
+  } catch {}
+
+  const headers: any = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(url, { ...options, headers });
+  
   if (!res.ok) {
+    if (res.status === 401 && window.location.pathname !== '/login') {
+      // Force logout on frontend
+      localStorage.removeItem('leadflow-store');
+      window.location.href = '/login';
+      throw new Error('Sessão expirada. Faça login novamente.');
+    }
     const body = await res.json().catch(() => ({}));
     const msg = Array.isArray(body?.message) ? body.message.join(', ') : (body?.message || `Erro ${res.status}`);
     throw new Error(msg);
   }
+  
   // Handle empty responses (204 No Content or empty body)
   const text = await res.text();
   if (!text) return {} as T;
@@ -111,6 +132,13 @@ export const api = {
     request<any>(`/campaigns/${id}/start`, { method: 'PATCH' }),
   pauseCampaign: (id: string) =>
     request<any>(`/campaigns/${id}/pause`, { method: 'PATCH' }),
+
+  // Auth & Users
+  login: (data: any) => request<any>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+  getUsers: () => request<any[]>('/users'),
+  createUser: (data: any) => request<any>('/users', { method: 'POST', body: JSON.stringify(data) }),
+  updateUser: (id: string, data: any) => request<any>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deactivateUser: (id: string) => request<any>(`/users/${id}/deactivate`, { method: 'PATCH' }),
 };
 
 // Retrocompat para código que ainda usa evolutionApi
