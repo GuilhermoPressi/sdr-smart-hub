@@ -5,7 +5,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from './entities/user.entity';
 
-@Controller('api/v1/users')
+@Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN) // Apenas admin pode acessar esse controller inteiro
 export class UsersController {
