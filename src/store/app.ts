@@ -135,6 +135,7 @@ interface Store {
   markBuilt: () => void;
 
   agents: AIConfig[];
+  setAgents: (agents: AIConfig[]) => void;
   saveAgent: (agent: AIConfig) => void;
   deleteAgent: (id: string) => void;
   resetAI: () => void;
@@ -216,6 +217,7 @@ export const useApp = create<Store>()(
   markBuilt: () => set((s) => ({ ai: { ...s.ai, built: true } })),
 
   agents: [],
+  setAgents: (agents) => set({ agents }),
   saveAgent: (agent) => set((s) => {
     const exists = s.agents.some(a => a.id === agent.id);
     if (exists) {

@@ -21,7 +21,7 @@ import TabRegras from "./configurar-ia/TabRegras";
 
 export default function ConfigurarIA() {
   const navigate = useNavigate();
-  const { ai, setAI, agents, saveAgent, deleteAgent, resetAI, connections } = useApp();
+  const { ai, setAI, agents, setAgents, saveAgent, deleteAgent, resetAI, connections } = useApp();
   const [activeConfigId, setActiveConfigId] = useState<string | null>(null);
   const [activating, setActivating] = useState<string | null>(null);
 
@@ -36,8 +36,9 @@ export default function ConfigurarIA() {
     const loadConfigs = async () => {
       try {
         const configs = await api.getAiConfigs();
-        if (configs && configs.length > 0) {
-          configs.forEach((c: any) => saveAgent(c));
+        console.log("[ConfigurarIA] GET configs:", configs);
+        if (configs && Array.isArray(configs)) {
+          setAgents(configs);
           const active = configs.find((c: any) => c.active);
           if (active) setActiveConfigId(active.id);
         }
@@ -104,13 +105,9 @@ export default function ConfigurarIA() {
       // 3. Re-fetch to sync (deleteAgent already removed it locally)
       try {
         const configs = await api.getAiConfigs();
-        // Replace entire agents list with fresh data from backend
-        const currentIds = (configs || []).map((c: any) => c.id);
-        // Remove any local agents that no longer exist on backend
-        agents.forEach(a => {
-          if (!currentIds.includes(a.id)) deleteAgent(a.id);
-        });
-        (configs || []).forEach((c: any) => saveAgent(c));
+        if (configs && Array.isArray(configs)) {
+          setAgents(configs);
+        }
       } catch { /* silent re-fetch failure is ok, local state is already correct */ }
     } catch (err) {
       console.error("[AI] Erro ao deletar:", err);
@@ -312,6 +309,7 @@ export default function ConfigurarIA() {
             };
 
             const savedAgent = await api.saveAiConfig(finalAgent);
+            console.log("[ConfigurarIA] savedAgent:", savedAgent);
 
             const currentAgents = agents.filter(a => a.id !== savedAgent.id);
             const hasActiveAgent = currentAgents.some(a => a.id === activeConfigId);

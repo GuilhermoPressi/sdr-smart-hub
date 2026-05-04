@@ -59,12 +59,18 @@ export class AiConfigService {
 
     if (clean.id && isValidUuid(clean.id)) {
       // UPDATE
-      await this.repo.update(clean.id, clean);
-      return this.repo.findOneBy({ id: clean.id });
+      const existing = await this.repo.preload(clean);
+      if (existing) {
+        const saved = await this.repo.save(existing);
+        this.logger.log(`[AiConfigService] IA atualizada: ${saved.id}`);
+        return saved;
+      }
     }
     // INSERT
     const entity = this.repo.create(clean);
-    return this.repo.save(entity);
+    const savedEntity = await this.repo.save(entity);
+    this.logger.log(`[AiConfigService] Nova IA criada: ${savedEntity.id}`);
+    return savedEntity;
   }
 
   async activate(id: string): Promise<AiConfig> {

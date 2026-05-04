@@ -33,8 +33,12 @@ export class AiConfigController {
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() body: Partial<AiConfig>): Promise<AiConfig> {
-    return this.svc.save({ ...body, id });
+  async update(@Param('id') id: string, @Body() body: Partial<AiConfig>): Promise<AiConfig> {
+    console.log(`[AiConfigController] PUT /:id -> recebido id: ${id}`);
+    console.log(`[AiConfigController] Payload completo recebido:`, JSON.stringify(body, null, 2));
+    const result = await this.svc.save({ ...body, id });
+    console.log(`[AiConfigController] Resultado retornado pelo svc.save:`, JSON.stringify(result, null, 2));
+    return result;
   }
 
   @Patch(':id/activate')
