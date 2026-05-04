@@ -213,7 +213,7 @@ export class ApifyService {
         const { datasetId } = await this.runActor('compass/crawler-google-places', {
           searchStringsArray: [variation],
           maxCrawledPlacesPerSearch: perVariation,
-          language: "pt",
+          language: "pt-BR",
           countryCode: "br"
         });
 
