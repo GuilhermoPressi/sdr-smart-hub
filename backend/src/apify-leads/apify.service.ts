@@ -29,12 +29,42 @@ export interface NormalizedLead {
 
 // Gera variações de query para maximizar cobertura
 function generateQueryVariations(query: string, targetLimit: number): string[] {
-  const variations: string[] = [query];
-  if (targetLimit <= 25) return variations;
-
-  // Extrai segmento e cidade da query
+  let baseQuery = query;
   const lower = query.toLowerCase();
 
+  // 1. Bloquear termos genéricos e expandir
+  const genericTerms = ['empresas', 'empresa', 'negócios', 'comércios', 'lojas'];
+  const hasGeneric = genericTerms.some(t => lower.includes(t));
+  
+  let variations: string[] = [];
+
+  if (hasGeneric) {
+    // Extrai a localização, ex: "em porto alegre"
+    const locMatch = lower.match(/\bem\s+(.+)$/i);
+    const location = locMatch ? `em ${locMatch[1].trim()}` : '';
+
+    const specificSegments = [
+      'transportadora',
+      'empresa de logística',
+      'construtora',
+      'empresa industrial',
+      'metalúrgica',
+      'escritório de contabilidade',
+      'clínica médica',
+      'distribuidora',
+      'agência de marketing',
+      'empresa de tecnologia'
+    ];
+
+    variations = specificSegments.map(seg => location ? `${seg} ${location}` : seg);
+  } else {
+    variations.push(query);
+  }
+
+  // 2. Se a meta for pequena e não for genérica, retorna rápido
+  if (targetLimit <= 25 && !hasGeneric) return variations;
+
+  // 3. Expansão por zonas (apenas se for >= 50 e tiver cidade)
   const zonas = ['centro', 'zona norte', 'zona sul', 'zona leste', 'zona oeste', 'bairros'];
   const synonyms: Record<string, string[]> = {
     dentista: ['clínica odontológica', 'consultório dentário', 'odontologia'],
@@ -47,26 +77,32 @@ function generateQueryVariations(query: string, targetLimit: number): string[] {
     farmácia: ['drogaria', 'farmácias'],
   };
 
-  // Adiciona variações por zona se targetLimit >= 50
-  if (targetLimit >= 50) {
-    const cityMatch = lower.match(/\bem\s+([a-záàâãéèêíïóôõúüç\s]+)$/i);
-    const city = cityMatch ? cityMatch[1].trim() : '';
-    const segment = city ? query.replace(/\sem\s.*$/i, '').trim() : query;
+  const initialVariations = [...variations]; // Cópia para iterar
+  
+  for (const v of initialVariations) {
+    const vLower = v.toLowerCase();
+    
+    // Adiciona variações por zona
+    if (targetLimit >= 50) {
+      const cityMatch = vLower.match(/\bem\s+([a-záàâãéèêíïóôõúüç\s]+)$/i);
+      const city = cityMatch ? cityMatch[1].trim() : '';
+      const segment = city ? v.replace(/\sem\s.*$/i, '').trim() : v;
 
-    if (city) {
-      zonas.slice(0, targetLimit >= 100 ? 4 : 2).forEach((zona) => {
-        variations.push(`${segment} ${city} ${zona}`);
-      });
+      if (city) {
+        zonas.slice(0, targetLimit >= 100 ? 4 : 2).forEach((zona) => {
+          variations.push(`${segment} ${city} ${zona}`);
+        });
+      }
     }
-  }
 
-  // Adiciona sinônimos
-  for (const [key, syns] of Object.entries(synonyms)) {
-    if (lower.includes(key)) {
-      const cityMatch = query.match(/\bem\s+(.+)$/i);
-      const city = cityMatch ? ` em ${cityMatch[1]}` : '';
-      syns.slice(0, 2).forEach((syn) => variations.push(`${syn}${city}`));
-      break;
+    // Adiciona sinônimos
+    for (const [key, syns] of Object.entries(synonyms)) {
+      if (vLower.includes(key)) {
+        const cityMatch = vLower.match(/\bem\s+(.+)$/i);
+        const city = cityMatch ? ` em ${cityMatch[1]}` : '';
+        syns.slice(0, 2).forEach((syn) => variations.push(`${syn}${city}`));
+        break;
+      }
     }
   }
 
@@ -158,7 +194,10 @@ export class ApifyService {
 
   async runAndWait(query: string, limit: number): Promise<{ leads: NormalizedLead[]; reachedTarget: boolean }> {
     const variations = generateQueryVariations(query, limit);
-    this.logger.log(`Variações geradas (${variations.length}): ${variations.join(' | ')}`);
+    
+    if (variations.length > 1) {
+      this.logger.log(`Busca expandida de 1 para ${variations.length} queries: ${variations.join(' | ')}`);
+    }
 
     const seenIds = new Set<string>(); // placeId ou phone_normalized
     const allLeads: NormalizedLead[] = [];
@@ -174,12 +213,21 @@ export class ApifyService {
         const { datasetId } = await this.runActor('compass/crawler-google-places', {
           searchStringsArray: [variation],
           maxCrawledPlacesPerSearch: perVariation,
+          language: "pt",
+          countryCode: "br"
         });
 
         const items = await this.getDatasetItems(datasetId, perVariation);
-        const withPhone = items.filter((i) => i.phone || i.phoneUnformatted);
+        const validItems = items.filter((i) => {
+          const hasPhone = i.phone || i.phoneUnformatted;
+          const address = (i.address || i.street || '').toLowerCase();
+          const isFake = address.includes('template street') || address.includes('fake');
+          const country = (i.countryCode || '').toLowerCase();
+          const isBr = !country || country === 'br' || country === 'brazil';
+          return hasPhone && !isFake && isBr;
+        });
 
-        for (const item of withPhone) {
+        for (const item of validItems) {
           if (allLeads.length >= limit) break;
 
           // Deduplicação por placeId ou phone
@@ -199,6 +247,17 @@ export class ApifyService {
         this.logger.warn(`Variação "${variation}" falhou: ${err.message}`);
       }
     }
+
+    // Sort to prioritize items with website or categories
+    allLeads.sort((a, b) => {
+      let scoreA = 0;
+      let scoreB = 0;
+      if (a.website) scoreA++;
+      if (b.website) scoreB++;
+      if (a.category) scoreA++;
+      if (b.category) scoreB++;
+      return scoreB - scoreA;
+    });
 
     const reachedTarget = allLeads.length >= limit;
     this.logger.log(`=== BUSCA FINALIZADA: ${allLeads.length} leads (target: ${limit}, atingido: ${reachedTarget}) ===`);
