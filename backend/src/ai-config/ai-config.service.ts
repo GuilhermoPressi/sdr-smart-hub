@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { AiConfig } from './entities/ai-config.entity';
+import { AiConfig, ConversationStep } from './entities/ai-config.entity';
 import { OpenaiService } from '../openai/openai.service';
 import { Contact } from '../contacts/entities/contact.entity';
 import { Message } from '../messages/entities/message.entity';
@@ -118,9 +118,37 @@ export class AiConfigService {
       newMsg.sender = 'lead';
       newMsg.createdAt = new Date();
       fakeHistory.push(newMsg);
+      
+      // ── VERIFICAR REGRAS AUTOMÁTICAS (Handoff) ──
+      if (config.autoRules?.transferKeywords && config.autoRules.transferKeywords.length > 0) {
+        const lowerText = body.message.toLowerCase();
+        const matched = config.autoRules.transferKeywords.find(kw => lowerText.includes(kw.toLowerCase()));
+        if (matched) {
+          this.logger.log(`[TESTE DE IA] 🔀 Simulação de Handoff ativada por keyword: "${matched}"`);
+          return {
+            reply: `[SIMULAÇÃO DE HANDOFF]\nPalavra-chave "${matched}" detectada.\nA IA pararia de responder e o contato seria movido para "Aguardando Atendente".`,
+            stage: 'atendimento_humano',
+            suggestedNextStage: 'atendimento_humano',
+          };
+        }
+      }
+
+      // ── VERIFICAR CONDIÇÕES DE SAÍDA TEXTUAL (Igual Webhook) ──
+      if (config.conversationFlow && config.conversationFlow.length > 0) {
+        const currentStageId = fakeContact.conversationStage || config.conversationFlow[0].id;
+        const currentStep = config.conversationFlow.find(s => s.id === currentStageId);
+        
+        if (currentStep) {
+          const shouldAdvance = this.checkExitConditions(currentStep, body.message);
+          if (shouldAdvance && currentStep.nextStep) {
+            this.logger.log(`[TESTE DE IA] 📍 Condição de saída atingida. Avançando etapa: ${currentStep.id} → ${currentStep.nextStep} antes da OpenAI`);
+            fakeContact.conversationStage = currentStep.nextStep;
+          }
+        }
+      }
     }
 
-    this.logger.log(`[TESTE DE IA] Enviando ${fakeHistory.length} mensagens para OpenAI | Stage: ${body.stage || 'nenhum'}`);
+    this.logger.log(`[TESTE DE IA] Enviando ${fakeHistory.length} mensagens para OpenAI | Stage: ${fakeContact.conversationStage || 'nenhum'}`);
     
     const response = await this.openaiService.generateResponse(config, fakeContact, fakeHistory);
     
@@ -132,8 +160,30 @@ export class AiConfigService {
     this.logger.log(`[TESTE DE IA] Resposta gerada com sucesso.`);
     return {
       reply: response.reply,
-      stage: response.suggestedNextStage || body.stage, // Simula a atualização de etapa local
+      stage: response.suggestedNextStage || fakeContact.conversationStage, // Atualiza etapa baseada no AI ou ExitCondition
       suggestedNextStage: response.suggestedNextStage,
     };
+  }
+
+  // ── FUNÇÃO AUXILIAR PARA TESTE: MESMA LÓGICA DO WEBHOOK ──
+  private checkExitConditions(step: ConversationStep, lastMessage: string): boolean {
+    if (!step.exitConditions || step.exitConditions.length === 0) return false;
+
+    const lowerMsg = lastMessage.toLowerCase();
+
+    for (const condition of step.exitConditions) {
+      const keywords = condition.toLowerCase()
+        .replace(/[.,!?]/g, '')
+        .split(/\s+/)
+        .filter(w => w.length > 3); // ignore short words
+
+      const matched = keywords.filter(kw => lowerMsg.includes(kw));
+      if (keywords.length > 0 && matched.length / keywords.length >= 0.5) {
+        this.logger.log(`[TESTE DE IA] ✅ Exit condition matched: "${condition}"`);
+        return true;
+      }
+    }
+
+    return false;
   }
 }
