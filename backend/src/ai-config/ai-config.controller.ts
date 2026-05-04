@@ -52,4 +52,12 @@ export class AiConfigController {
     await this.svc.delete(id);
     return { success: true, deletedId: id };
   }
+
+  @Post(':id/test-chat')
+  async testChat(
+    @Param('id') id: string,
+    @Body() body: { message: string; history: any[]; stage: string },
+  ) {
+    return this.svc.testChat(id, body);
+  }
 }

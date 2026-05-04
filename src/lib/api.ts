@@ -98,6 +98,8 @@ export const api = {
     request<any>(`/ai-config/${id}/deactivate`, { method: 'PATCH' }),
   deleteAiConfig: (id: string) =>
     request<any>(`/ai-config/${id}`, { method: 'DELETE' }),
+  testAiChat: (id: string, payload: { message: string; history: any[]; stage: string }) =>
+    request<any>(`/ai-config/${id}/test-chat`, { method: 'POST', body: JSON.stringify(payload) }),
 
   // Contacts
   getContacts: () => request<any[]>('/contacts'),

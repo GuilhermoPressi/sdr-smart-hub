@@ -11,6 +11,7 @@ import { useApp } from "@/store/app";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { TestChatModal } from "@/components/shared/TestChatModal";
 
 import { TABS, BUILD_PHRASES } from "./configurar-ia/constants";
 import TabFluxo from "./configurar-ia/TabFluxo";
@@ -29,6 +30,7 @@ export default function ConfigurarIA() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [testModalOpen, setTestModalOpen] = useState(false);
 
   useEffect(() => {
     const loadConfigs = async () => {
@@ -234,6 +236,16 @@ export default function ConfigurarIA() {
           <span className="text-xs text-muted-foreground">
             {ai.id && ai.id.length === 36 ? "Editando" : "Nova IA"}
           </span>
+          {ai.id && ai.id.length === 36 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setTestModalOpen(true)}
+              className="border-primary/50 text-primary hover:bg-primary/10 mr-2"
+            >
+              Testar IA
+            </Button>
+          )}
           <Button
             onClick={handleSave}
             disabled={saving}
@@ -357,6 +369,16 @@ export default function ConfigurarIA() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Test Chat Modal */}
+      {ai.id && (
+        <TestChatModal
+          open={testModalOpen}
+          onOpenChange={setTestModalOpen}
+          aiId={ai.id}
+          aiName={ai.displayName || ai.internalName || "Assistente"}
+        />
+      )}
     </div>
   );
 }
