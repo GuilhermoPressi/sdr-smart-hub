@@ -297,15 +297,14 @@ export default function ConfigurarIA() {
         title="Salvando sua IA de Atendimento"
         onComplete={async () => {
           try {
-            const displayName = ai.displayName || ai.internalName || `${ai.company || "IA"} - ${ai.product || "Atendimento"}`;
-            const internalName = ai.internalName || displayName;
+            const internalName = ai.internalName || `${ai.company || "IA"} - ${ai.product || "Atendimento"}`;
+            const displayName = internalName; // Força displayName a ser igual ao internalName para não ficar preso em dados antigos
 
             const finalAgent = {
               ...ai,
               internalName,
               displayName,
               built: true,
-              active: false,
             };
 
             const savedAgent = await api.saveAiConfig(finalAgent);
