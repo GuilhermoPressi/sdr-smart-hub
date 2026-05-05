@@ -177,7 +177,7 @@ export default function Dashboard() {
               <div 
                 key={fs.id} 
                 className={`h-12 md:h-14 bg-gradient-to-r ${fs.color} flex items-center justify-between px-4 sm:px-6 rounded-md text-white shadow-md transition-all duration-1000`}
-                style={{ width: \`\${width}%\` }}
+                style={{ width: width + '%' }}
               >
                 <span className="font-medium text-xs sm:text-sm truncate mr-2">{fs.label}</span>
                 <span className="font-bold text-lg">{fs.value}</span>
