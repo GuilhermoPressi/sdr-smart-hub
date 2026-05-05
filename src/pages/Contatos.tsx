@@ -9,7 +9,17 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { LoadingModal } from "@/components/shared/LoadingModal";
-import { Search, Filter, UserPlus, Tag, Plus, Workflow, X, Upload, Download, Phone, Mail, MessageCircle } from "lucide-react";
+import { Search, Filter, UserPlus, Tag, Plus, Workflow, X, Upload, Download, Phone, Mail, MessageCircle, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ContactDetailsSheet } from "@/components/shared/ContactDetailsSheet";
 import { ImportContactsModal } from "@/components/shared/ImportContactsModal";
 import { toast } from "sonner";
@@ -57,6 +67,7 @@ export default function Contatos() {
   const [stage, setStage] = useState<StageId | "">("");
   const [loading, setLoading] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   const filtered = useMemo(() => {
     return leads.filter((l) => {
@@ -71,11 +82,29 @@ export default function Contatos() {
   const allTags = Array.from(new Set(leads.flatMap((l) => l.tags)));
   const allOrigins = Array.from(new Set(leads.map((l) => l.origin)));
   const allStatuses = Array.from(new Set(leads.map((l) => l.status)));
-  const allSelected = filtered.length > 0 && filtered.every((l) => selected.includes(l.id));
-
   const toggleAll = () => {
-    if (allSelected) setSelected(selected.filter((id) => !filtered.find((l) => l.id === id)));
-    else setSelected(Array.from(new Set([...selected, ...filtered.map((l) => l.id)])));
+    if (allSelected) {
+      setSelected(selected.filter((id) => !filtered.some((l) => l.id === id)));
+    } else {
+      setSelected(Array.from(new Set([...selected, ...filtered.map((l) => l.id)])));
+    }
+  };
+
+  const isIndeterminate = selected.length > 0 && !allSelected && filtered.some(l => selected.includes(l.id));
+
+  const handleDeleteBulk = async () => {
+    try {
+      setLoading(true);
+      const { bulkDeleteLeads } = useApp.getState();
+      await bulkDeleteLeads(selected);
+      toast.success(`${selected.length} contatos excluídos com sucesso.`);
+      setSelected([]);
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao excluir contatos");
+    } finally {
+      setLoading(false);
+      setIsDeleteConfirmOpen(false);
+    }
   };
 
   const apply = () => setLoading(true);
@@ -152,7 +181,12 @@ export default function Contatos() {
                 <thead className="bg-background/40 text-xs uppercase tracking-wider text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 w-10">
-                      <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
+                      <div className="flex items-center justify-center">
+                        <Checkbox 
+                          checked={allSelected ? true : isIndeterminate ? "indeterminate" : false} 
+                          onCheckedChange={toggleAll} 
+                        />
+                      </div>
                     </th>
                     <Th>Nome</Th><Th>Tags</Th><Th>Status</Th>
                   </tr>
@@ -249,6 +283,16 @@ export default function Contatos() {
             >
               Aplicar
             </Button>
+
+            {selected.length > 0 && (
+              <Button
+                variant="ghost"
+                className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => setIsDeleteConfirmOpen(true)}
+              >
+                <Trash2 className="h-4 w-4 mr-2" /> Excluir selecionados
+              </Button>
+            )}
           </aside>
         </div>
       </div>
@@ -278,6 +322,23 @@ export default function Contatos() {
         onOpenChange={setIsImportModalOpen}
         onComplete={fetchLeads}
       />
+
+      <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir contatos</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir {selected.length} contatos? Essa ação não pode ser desfeita e removerá permanentemente os contatos da sua base.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteBulk} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Confirmar Exclusão
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

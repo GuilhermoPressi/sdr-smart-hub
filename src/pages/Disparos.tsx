@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Send, Plus, Eye, Pause, Play, Upload, Users, Tag, ListPlus, Loader2, CheckCircle2, XCircle, Clock, ArrowLeft, Zap } from "lucide-react";
+import { Send, Plus, Eye, Pause, Play, Upload, Users, Tag, ListPlus, Loader2, CheckCircle2, XCircle, Clock, ArrowLeft, Zap, Image as ImageIcon, Video, FileAudio, FileText, Type } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -40,6 +40,13 @@ export default function Disparos() {
   const [limitPerMinute, setLimitPerMinute] = useState(15);
   const [simulateHuman, setSimulateHuman] = useState(true);
 
+  // Media state
+  const [messageType, setMessageType] = useState<"text" | "image" | "video" | "audio" | "document">("text");
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaData, setMediaData] = useState<{ url: string; fileName: string; mimeType: string } | null>(null);
+  const [caption, setCaption] = useState("");
+  const [uploading, setUploading] = useState(false);
+
   useEffect(() => { loadCampaigns(); }, []);
 
   async function loadCampaigns() {
@@ -53,6 +60,7 @@ export default function Disparos() {
   function startCreate() {
     setStep(1); setSourceType("crm"); setSelectedIds(new Set()); setSelectedTag(""); setCsvText("");
     setName(""); setMessage(""); setDelaySeconds(8); setLimitPerMinute(15); setSimulateHuman(true);
+    setMessageType("text"); setMediaFile(null); setMediaData(null); setCaption("");
     loadContacts(); setView("create");
   }
 
@@ -71,16 +79,46 @@ export default function Disparos() {
 
   async function handleCreate() {
     const recs = getSelectedRecipients();
-    if (!message.trim()) { toast.error("Escreva uma mensagem."); return; }
+    if (messageType === "text" && !message.trim()) { toast.error("Escreva uma mensagem."); return; }
+    if (messageType !== "text" && !mediaData) { toast.error("Selecione um arquivo de mídia."); return; }
     if (recs.length === 0) { toast.error("Nenhum destinatário selecionado."); return; }
+    
     setCreating(true);
     try {
-      const campaign = await api.createCampaign({ name: name || undefined, message, sourceType, delaySeconds, limitPerMinute, simulateHuman, recipients: recs });
+      const campaign = await api.createCampaign({ 
+        name: name || undefined, 
+        message: messageType === "text" ? message : undefined, 
+        messageType,
+        mediaUrl: mediaData?.url,
+        mediaFileName: mediaData?.fileName,
+        mediaMimeType: mediaData?.mimeType,
+        caption: messageType !== "audio" ? caption : undefined,
+        sourceType, 
+        delaySeconds, 
+        limitPerMinute, 
+        simulateHuman, 
+        recipients: recs 
+      });
       await api.startCampaign(campaign.id);
       toast.success(`Disparo iniciado para ${recs.length} contatos!`);
       await loadCampaigns(); setView("list");
     } catch (err: any) { toast.error(err.message || "Erro ao criar disparo"); }
     finally { setCreating(false); }
+  }
+
+  async function handleUploadMedia(file: File) {
+    setUploading(true);
+    try {
+      const res = await api.uploadCampaignMedia(file);
+      setMediaData({ url: res.mediaUrl, fileName: res.fileName, mimeType: res.mimeType });
+      setMediaFile(file);
+      toast.success("Arquivo enviado com sucesso!");
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao enviar arquivo");
+      setMediaFile(null);
+    } finally {
+      setUploading(false);
+    }
   }
 
   async function viewDetail(c: Campaign) {
@@ -192,7 +230,28 @@ export default function Disparos() {
             <div className="rounded-xl bg-surface/60 border border-border-subtle p-4 text-center"><p className="text-2xl font-bold text-foreground">{c.total}</p><p className="text-xs text-muted-foreground">Total</p></div>
           </div>
           <div className="h-2 rounded-full bg-surface-elevated overflow-hidden"><div className="h-full rounded-full bg-gradient-primary transition-all" style={{ width: `${pct}%` }} /></div>
-          <div className="bg-surface/40 rounded-xl border border-border-subtle p-3"><p className="text-xs text-muted-foreground mb-1">Mensagem:</p><p className="text-sm whitespace-pre-wrap">{c.message}</p></div>
+          <div className="bg-surface/40 rounded-xl border border-border-subtle p-3">
+            <p className="text-xs text-muted-foreground mb-1">Conteúdo:</p>
+            {c.messageType === "text" || !c.messageType ? (
+              <p className="text-sm whitespace-pre-wrap">{c.message}</p>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs font-medium text-primary">
+                  {c.messageType === "image" && <ImageIcon className="h-4 w-4" />}
+                  {c.messageType === "video" && <Video className="h-4 w-4" />}
+                  {c.messageType === "audio" && <FileAudio className="h-4 w-4" />}
+                  {c.messageType === "document" && <FileText className="h-4 w-4" />}
+                  <span className="capitalize">{c.messageType}</span>
+                </div>
+                {c.mediaUrl && (
+                  <a href={c.mediaUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline block truncate">
+                    {c.mediaFileName || "Ver mídia"}
+                  </a>
+                )}
+                {c.caption && <p className="text-sm whitespace-pre-wrap mt-2 opacity-80 italic">"{c.caption}"</p>}
+              </div>
+            )}
+          </div>
         </div>
         <div className="glass-card rounded-2xl border-border-subtle overflow-hidden">
           <div className="p-4 border-b border-border-subtle"><h4 className="font-medium text-sm">Destinatários ({recipients.length})</h4></div>
@@ -337,33 +396,143 @@ export default function Disparos() {
 
       {/* STEP 3: Message */}
       {step === 3 && (
-        <div className="glass-card rounded-2xl p-6 border-border-subtle space-y-5">
-          <div><h3 className="font-display font-semibold">Mensagem</h3><p className="text-xs text-muted-foreground mt-1">Escreva a mensagem que será enviada.</p></div>
-          <div className="space-y-2">
-            <Textarea value={message} onChange={e => setMessage(e.target.value)} rows={5} placeholder={"Fala {nome}, tudo bem?\n\nVi que você atua com {segmento} em {cidade}..."} />
-            <div className="flex flex-wrap gap-1.5">
-              <span className="text-[10px] text-muted-foreground mr-1">Variáveis:</span>
-              {["{nome}", "{empresa}", "{cidade}", "{segmento}"].map(v => (
-                <button key={v} type="button" onClick={() => setMessage(m => m + v)}
-                  className="px-2 py-0.5 rounded-md bg-primary/10 border border-primary/20 text-[10px] font-mono text-primary hover:bg-primary/20">{v}</button>
+        <div className="glass-card rounded-2xl p-6 border-border-subtle space-y-6">
+          <div><h3 className="font-display font-semibold">Mensagem e Mídia</h3><p className="text-xs text-muted-foreground mt-1">Configure o conteúdo que será enviado.</p></div>
+          
+          <div className="space-y-3">
+            <Label className="text-xs">Tipo de mensagem</Label>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {[
+                { id: "text", icon: Type, label: "Texto" },
+                { id: "image", icon: ImageIcon, label: "Imagem" },
+                { id: "video", icon: Video, label: "Vídeo" },
+                { id: "audio", icon: FileAudio, label: "Áudio" },
+                { id: "document", icon: FileText, label: "Doc/PDF" },
+              ].map(t => (
+                <button key={t.id} type="button" onClick={() => setMessageType(t.id as any)}
+                  className={cn("flex flex-col items-center gap-1.5 p-2.5 rounded-xl border transition-all",
+                    messageType === t.id ? "bg-primary/10 border-primary/30 text-primary" : "border-border-subtle text-muted-foreground hover:text-foreground"
+                  )}>
+                  <t.icon className="h-4 w-4" /><span className="text-[10px] font-medium">{t.label}</span>
+                </button>
               ))}
             </div>
           </div>
-          {message && (
-            <div className="rounded-xl bg-surface/60 border border-border-subtle p-4 space-y-1">
-              <p className="text-[10px] text-muted-foreground font-medium">Prévia:</p>
-              <p className="text-sm whitespace-pre-wrap">{message.replace(/\{nome\}/gi, "João").replace(/\{empresa\}/gi, "Empresa X").replace(/\{cidade\}/gi, "São Paulo").replace(/\{segmento\}/gi, "Tecnologia")}</p>
+
+          {messageType === "text" ? (
+            <div className="space-y-2">
+              <Label className="text-xs">Texto da mensagem</Label>
+              <Textarea value={message} onChange={e => setMessage(e.target.value)} rows={5} placeholder={"Fala {nome}, tudo bem?\n\nVi que você atua com {segmento} em {cidade}..."} />
+              <div className="flex flex-wrap gap-1.5">
+                <span className="text-[10px] text-muted-foreground mr-1">Variáveis:</span>
+                {["{nome}", "{empresa}", "{cidade}", "{segmento}"].map(v => (
+                  <button key={v} type="button" onClick={() => setMessage(m => m + v)}
+                    className="px-2 py-0.5 rounded-md bg-primary/10 border border-primary/20 text-[10px] font-mono text-primary hover:bg-primary/20">{v}</button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-xs">Arquivo ({messageType})</Label>
+                <div className="relative">
+                  <input 
+                    type="file" 
+                    id="media-upload" 
+                    className="hidden" 
+                    accept={
+                      messageType === "image" ? "image/*" :
+                      messageType === "video" ? "video/mp4" :
+                      messageType === "audio" ? "audio/*" :
+                      "application/pdf"
+                    }
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleUploadMedia(file);
+                    }}
+                  />
+                  <label 
+                    htmlFor="media-upload"
+                    className={cn(
+                      "flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-2xl cursor-pointer transition-all",
+                      mediaFile ? "border-success/50 bg-success/5" : "border-border-subtle hover:border-primary/50 bg-surface/40"
+                    )}
+                  >
+                    {uploading ? (
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    ) : mediaFile ? (
+                      <>
+                        <CheckCircle2 className="h-6 w-6 text-success mb-2" />
+                        <span className="text-xs font-medium text-foreground">{mediaFile.name}</span>
+                        <span className="text-[10px] text-muted-foreground">{(mediaFile.size / 1024 / 1024).toFixed(2)} MB</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-6 w-6 text-muted-foreground mb-2" />
+                        <span className="text-xs font-medium">Clique para fazer upload</span>
+                        <span className="text-[10px] text-muted-foreground">Arraste ou selecione o arquivo {messageType}</span>
+                      </>
+                    )}
+                  </label>
+                </div>
+              </div>
+
+              {messageType !== "audio" && (
+                <div className="space-y-2">
+                  <Label className="text-xs">Legenda (opcional)</Label>
+                  <Input value={caption} onChange={e => setCaption(e.target.value)} placeholder="Escreva uma legenda..." />
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="text-[10px] text-muted-foreground mr-1">Variáveis:</span>
+                    {["{nome}", "{empresa}", "{cidade}", "{segmento}"].map(v => (
+                      <button key={v} type="button" onClick={() => setCaption(c => c + v)}
+                        className="px-2 py-0.5 rounded-md bg-primary/10 border border-primary/20 text-[10px] font-mono text-primary hover:bg-primary/20">{v}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
+
+          {/* Prévia consolidada */}
+          {(messageType === "text" ? message : (mediaData || caption)) && (
+            <div className="rounded-xl bg-surface/60 border border-border-subtle p-4 space-y-2">
+              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Prévia:</p>
+              <div className="flex items-start gap-3">
+                <div className="h-8 w-8 rounded-full bg-primary/10 grid place-items-center shrink-0">
+                  <Zap className="h-4 w-4 text-primary" />
+                </div>
+                <div className="flex-1 bg-background rounded-2xl rounded-tl-none p-3 shadow-sm border border-border-subtle/50">
+                  {messageType !== "text" && mediaData && (
+                    <div className="mb-2 p-2 bg-surface/60 rounded-lg flex items-center gap-2 border border-border-subtle">
+                      {messageType === "image" && <ImageIcon className="h-4 w-4 text-primary" />}
+                      {messageType === "video" && <Video className="h-4 w-4 text-primary" />}
+                      {messageType === "audio" && <FileAudio className="h-4 w-4 text-primary" />}
+                      {messageType === "document" && <FileText className="h-4 w-4 text-primary" />}
+                      <span className="text-[10px] font-medium truncate flex-1">{mediaData.fileName}</span>
+                    </div>
+                  )}
+                  <p className="text-sm whitespace-pre-wrap leading-relaxed">
+                    {(messageType === "text" ? message : caption)
+                      .replace(/\{nome\}/gi, "João")
+                      .replace(/\{empresa\}/gi, "Empresa X")
+                      .replace(/\{cidade\}/gi, "São Paulo")
+                      .replace(/\{segmento\}/gi, "Tecnologia") || (messageType === "audio" ? "Enviando áudio..." : "Sem legenda")}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="rounded-xl border border-border-subtle bg-surface/40 p-4 text-xs text-muted-foreground space-y-1">
             <p className="font-medium text-foreground">Resumo do disparo:</p>
-            <p>📩 {getSelectedRecipients().length} destinatários</p>
+            <p>📩 {getSelectedRecipients().length} destinatários · 📄 Tipo: {messageType}</p>
             <p>⏱️ Delay: {delaySeconds}s {simulateHuman && "(com variação)"} · Limite: {limitPerMinute}/min</p>
             <p>⏳ Tempo estimado: ~{Math.ceil(getSelectedRecipients().length * delaySeconds / 60)} minutos</p>
           </div>
+
           <div className="flex justify-between pt-2">
             <Button variant="outline" onClick={() => setStep(2)}>Voltar</Button>
-            <Button onClick={handleCreate} disabled={creating || !message.trim()} className="bg-gradient-primary text-primary-foreground shadow-glow">
+            <Button onClick={handleCreate} disabled={creating || uploading || (messageType === "text" ? !message.trim() : !mediaData)} className="bg-gradient-primary text-primary-foreground shadow-glow">
               {creating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Criando...</> : <><Send className="h-4 w-4 mr-2" /> Iniciar Disparo</>}
             </Button>
           </div>

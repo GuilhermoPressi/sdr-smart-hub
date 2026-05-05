@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Patch, Body, UseGuards, UseInterceptors, UploadedFile, Req } from '@nestjs/common';
+import { Controller, Get, Post, Param, Patch, Body, UseGuards, UseInterceptors, UploadedFile, Req, Delete } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ContactsService } from './contacts.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -9,18 +9,18 @@ export class ContactsController {
   constructor(private readonly contactsService: ContactsService) {}
 
   @Get()
-  findAll() {
-    return this.contactsService.findAll();
+  findAll(@Req() req) {
+    return this.contactsService.findAll(req.user.companyId);
   }
 
   @Get('dashboard/metrics')
-  getDashboardMetrics() {
-    return this.contactsService.getDashboardMetrics();
+  getDashboardMetrics(@Req() req) {
+    return this.contactsService.getDashboardMetrics(req.user.companyId);
   }
 
   @Get('conversations')
-  findConversations() {
-    return this.contactsService.findConversations();
+  findConversations(@Req() req) {
+    return this.contactsService.findConversations(req.user.companyId);
   }
 
   @Get(':id')
@@ -51,5 +51,10 @@ export class ContactsController {
     };
 
     return this.contactsService.importContacts(file.buffer, mapping, config);
+  }
+
+  @Delete('bulk')
+  async deleteBulk(@Req() req, @Body() body: { contactIds: string[] }) {
+    return this.contactsService.deleteBulk(body.contactIds, req.user.companyId);
   }
 }

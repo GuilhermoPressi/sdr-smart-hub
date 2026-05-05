@@ -15,6 +15,10 @@ interface CreateCampaignDto {
   delaySeconds?: number;
   limitPerMinute?: number;
   simulateHuman?: boolean;
+  mediaUrl?: string;
+  mediaFileName?: string;
+  mediaMimeType?: string;
+  caption?: string;
   recipients: { phone: string; name?: string; company?: string; city?: string; segment?: string }[];
 }
 
@@ -53,10 +57,14 @@ export class CampaignsService {
     const campaign = this.campaignRepo.create({
       name: dto.name || `Disparo ${new Date().toLocaleDateString('pt-BR')}`,
       message: dto.message,
-      messageType: dto.messageType || 'free_text',
+      messageType: dto.messageType || 'text',
       instanceName: dto.instanceName,
       sourceType: dto.sourceType,
       sourceId: dto.sourceId,
+      mediaUrl: dto.mediaUrl,
+      mediaFileName: dto.mediaFileName,
+      mediaMimeType: dto.mediaMimeType,
+      caption: dto.caption,
       delaySeconds: Math.max(3, dto.delaySeconds || 8),
       limitPerMinute: Math.min(30, Math.max(5, dto.limitPerMinute || 15)),
       simulateHuman: dto.simulateHuman !== false,
@@ -142,17 +150,27 @@ export class CampaignsService {
         minuteStart = Date.now();
       }
 
-      // Build message with variables
-      const text = this.replaceVariables(campaign.message, recipient);
-
       // Send
       try {
-        await this.evoSvc.sendText(campaign.instanceName, recipient.phone, text);
+        if (campaign.messageType === 'text' || !campaign.messageType) {
+          const text = this.replaceVariables(campaign.message, recipient);
+          await this.evoSvc.sendText(campaign.instanceName, recipient.phone, text);
+        } else {
+          const caption = this.replaceVariables(campaign.caption || '', recipient);
+          await this.evoSvc.sendMedia(
+            campaign.instanceName,
+            recipient.phone,
+            campaign.mediaUrl,
+            caption,
+            campaign.messageType as any
+          );
+        }
+
         sentCount++;
         sentThisMinute++;
         await this.recipientRepo.update(recipient.id, { status: 'sent', sentAt: new Date() });
         await this.campaignRepo.update(campaignId, { sent: sentCount });
-        this.logger.log(`✅ Mensagem enviada para ${recipient.name || recipient.phone} (${sentCount}/${campaign.total})`);
+        this.logger.log(`✅ Mensagem (${campaign.messageType}) enviada para ${recipient.name || recipient.phone} (${sentCount}/${campaign.total})`);
       } catch (err) {
         failedCount++;
         await this.recipientRepo.update(recipient.id, { status: 'failed', error: err.message?.substring(0, 200) });

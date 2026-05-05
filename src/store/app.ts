@@ -149,6 +149,7 @@ interface Store {
   addLeads: (leads: Lead[]) => void;
   updateLead: (id: string, patch: Partial<Lead>) => void;
   bulkUpdate: (ids: string[], patch: Partial<Lead>) => void;
+  bulkDeleteLeads: (ids: string[]) => Promise<void>;
   moveLead: (id: string, stage: StageId) => void;
   fetchLeads: () => Promise<void>;
 
@@ -243,14 +244,16 @@ export const useApp = create<Store>()(
       api.updateContact(id, patch).catch(console.error);
     });
   },
-  bulkUpdate: (ids, patch) =>
-    set((s) => ({
-      leads: s.leads.map((l) =>
-        ids.includes(l.id)
-          ? { ...l, ...patch, tags: patch.tags ? Array.from(new Set([...l.tags, ...patch.tags])) : l.tags }
           : l,
       ),
     })),
+  bulkDeleteLeads: async (ids) => {
+    const { api } = await import("@/lib/api");
+    await api.deleteBulkContacts(ids);
+    set((s) => ({
+      leads: s.leads.filter((l) => !ids.includes(l.id)),
+    }));
+  },
   moveLead: (id, stage) => {
     set((s) => ({ leads: s.leads.map((l) => (l.id === id ? { ...l, stage } : l)) }));
     import("@/lib/api").then(({ api }) => {

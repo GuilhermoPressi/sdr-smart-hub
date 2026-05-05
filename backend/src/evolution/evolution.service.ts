@@ -165,7 +165,7 @@ export class EvolutionService {
     phone: string,
     mediaUrl: string,
     caption?: string,
-    mediatype: 'image' | 'video' | 'document' = 'document',
+    mediatype: 'image' | 'video' | 'audio' | 'document' = 'document',
   ) {
     const number = phone.replace(/\D/g, '');
     const { data } = await this.client.post(
@@ -174,6 +174,33 @@ export class EvolutionService {
         number,
         mediatype,
         media: mediaUrl,
+        caption: caption || '',
+      },
+    );
+    return data;
+  }
+
+  async sendImage(instanceName: string, phone: string, mediaUrl: string, caption?: string) {
+    return this.sendMedia(instanceName, phone, mediaUrl, caption, 'image');
+  }
+
+  async sendVideo(instanceName: string, phone: string, mediaUrl: string, caption?: string) {
+    return this.sendMedia(instanceName, phone, mediaUrl, caption, 'video');
+  }
+
+  async sendAudio(instanceName: string, phone: string, mediaUrl: string) {
+    return this.sendMedia(instanceName, phone, mediaUrl, undefined, 'audio');
+  }
+
+  async sendDocument(instanceName: string, phone: string, mediaUrl: string, fileName: string, caption?: string) {
+    const number = phone.replace(/\D/g, '');
+    const { data } = await this.client.post(
+      `/message/sendMedia/${instanceName}`,
+      {
+        number,
+        mediatype: 'document',
+        media: mediaUrl,
+        fileName: fileName,
         caption: caption || '',
       },
     );

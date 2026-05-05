@@ -11,8 +11,11 @@ export class ContactsService {
     private readonly repo: Repository<Contact>,
   ) {}
 
-  findAll() {
-    return this.repo.find({ order: { updatedAt: 'DESC' } });
+  findAll(companyId: string) {
+    return this.repo.find({ 
+      where: { companyId },
+      order: { updatedAt: 'DESC' } 
+    });
   }
 
   findOne(id: string) {
@@ -24,7 +27,7 @@ export class ContactsService {
   }
 
   // Retorna apenas contatos com mensagens, incluindo prévia da última mensagem
-  async findConversations(): Promise<any[]> {
+  async findConversations(companyId: string): Promise<any[]> {
     const result = await this.repo.query(`
       SELECT
         c.id,
@@ -53,9 +56,10 @@ export class ContactsService {
         LIMIT 1
       ) m ON true
       LEFT JOIN messages m2 ON m2.contact_id = c.id
+      WHERE c.company_id = $1
       GROUP BY c.id, m.text, m.sender, m.created_at
       ORDER BY m.created_at DESC
-    `);
+    `, [companyId]);
 
     return result.map((r: any) => ({
       ...r,
@@ -63,7 +67,7 @@ export class ContactsService {
     }));
   }
 
-  async getDashboardMetrics() {
+  async getDashboardMetrics(companyId: string) {
     const startTime = Date.now();
 
     const [metrics] = await this.repo.query(`
@@ -77,9 +81,10 @@ export class ContactsService {
         COUNT(*) FILTER (WHERE stage = 'ganho') AS "totalConverted",
         COUNT(*) FILTER (WHERE stage = 'perdido') AS "totalLost",
         COUNT(*) FILTER (WHERE handoff_at IS NOT NULL) AS "aiHandoffs",
-        (SELECT COUNT(DISTINCT contact_id) FROM messages WHERE sender = 'lead' AND LENGTH(trim(text)) >= 3) AS "totalResponded"
+        (SELECT COUNT(DISTINCT contact_id) FROM messages m JOIN contacts c2 ON m.contact_id = c2.id WHERE c2.company_id = $1 AND m.sender = 'lead' AND LENGTH(trim(m.text)) >= 3) AS "totalResponded"
       FROM contacts
-    `);
+      WHERE company_id = $1
+    `, [companyId]);
 
     const totalContacts = parseInt(metrics.totalContacts || '0', 10);
     const leadsToday = parseInt(metrics.leadsToday || '0', 10);
@@ -268,5 +273,13 @@ export class ContactsService {
       digits = '55' + digits;
     }
     return digits;
+  }
+
+  async deleteBulk(ids: string[], companyId: string) {
+    const result = await this.repo.delete({
+      id: In(ids),
+      companyId: companyId,
+    });
+    return { deleted: result.affected || 0 };
   }
 }

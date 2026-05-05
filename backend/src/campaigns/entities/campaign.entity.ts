@@ -19,12 +19,24 @@ export class Campaign {
   @Column({ default: 'pending' })
   status: string;
 
-  /** free_text | template (future) */
-  @Column({ name: 'message_type', default: 'free_text' })
+  /** text | image | video | audio | document */
+  @Column({ name: 'message_type', default: 'text' })
   messageType: string;
 
-  @Column({ type: 'text' })
+  @Column({ type: 'text', nullable: true })
   message: string;
+
+  @Column({ name: 'media_url', nullable: true })
+  mediaUrl: string;
+
+  @Column({ name: 'media_file_name', nullable: true })
+  mediaFileName: string;
+
+  @Column({ name: 'media_mime_type', nullable: true })
+  mediaMimeType: string;
+
+  @Column({ type: 'text', nullable: true })
+  caption: string;
 
   /** Template fields for future API oficial */
   @Column({ name: 'template_name', nullable: true })

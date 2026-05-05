@@ -122,6 +122,8 @@ export const api = {
     });
     return request<any>('/contacts/import', { method: 'POST', body: formData });
   },
+  deleteBulkContacts: (ids: string[]) => 
+    request<any>('/contacts/bulk', { method: 'DELETE', body: JSON.stringify({ contactIds: ids }) }),
 
   // Messages
   getMessages: (contactId: string, limit = 50) =>
@@ -144,6 +146,11 @@ export const api = {
   getCampaignRecipients: (id: string) => request<any[]>(`/campaigns/${id}/recipients`),
   createCampaign: (data: any) =>
     request<any>('/campaigns', { method: 'POST', body: JSON.stringify(data) }),
+  uploadCampaignMedia: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request<any>('/campaigns/upload-media', { method: 'POST', body: formData });
+  },
   startCampaign: (id: string) =>
     request<any>(`/campaigns/${id}/start`, { method: 'PATCH' }),
   pauseCampaign: (id: string) =>

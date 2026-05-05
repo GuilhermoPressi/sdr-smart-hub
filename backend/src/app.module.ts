@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ApifyLeadsModule } from './apify-leads/apify-leads.module';
 import { MessagesModule } from './messages/messages.module';
@@ -40,6 +42,10 @@ import { EvolutionInstance } from './evolution/entities/evolution-instance.entit
     OpenaiModule,
     ContactsModule,
     CampaignsModule,
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'uploads'),
+      serveRoot: '/uploads',
+    }),
   ],
 })
 export class AppModule {}
