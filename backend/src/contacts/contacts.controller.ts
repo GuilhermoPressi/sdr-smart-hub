@@ -12,6 +12,11 @@ export class ContactsController {
     return this.contactsService.findAll();
   }
 
+  @Get('dashboard/metrics')
+  getDashboardMetrics() {
+    return this.contactsService.getDashboardMetrics();
+  }
+
   @Get('conversations')
   findConversations() {
     return this.contactsService.findConversations();

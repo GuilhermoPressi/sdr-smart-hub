@@ -104,6 +104,7 @@ export const api = {
   // Contacts
   getContacts: () => request<any[]>('/contacts'),
   getConversations: () => request<any[]>('/contacts/conversations'),
+  getDashboardMetrics: () => request<any>('/contacts/dashboard/metrics', { cache: 'no-store' }),
   markAsRead: (contactId: string) => request<any>(`/messages/contact/${contactId}/read`, { method: 'POST' }),
   getContact: (id: string) => request<any>(`/contacts/${id}`),
   updateContact: (id: string, data: Record<string, any>) =>
