@@ -111,8 +111,9 @@ export class ContactsService {
       conversionRate: parseFloat(conversionRate.toFixed(1)),
     };
 
-    console.log(\`[ContactsService] Dashboard metrics solicitado. Tempo da query: \${Date.now() - startTime}ms\`);
-    console.log(\`[ContactsService] Totais:\`, result);
+    const duration = Date.now() - startTime;
+    console.log('[ContactsService] Dashboard metrics solicitado. Tempo da query:', duration, 'ms');
+    console.log('[ContactsService] Totais:', result);
 
     return result;
   }
