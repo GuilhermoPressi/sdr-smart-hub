@@ -22,6 +22,11 @@ export class ContactsService {
     return this.repo.findOneBy({ id });
   }
 
+  create(data: Partial<Contact>) {
+    const contact = this.repo.create(data);
+    return this.repo.save(contact);
+  }
+
   update(id: string, data: Partial<Contact>) {
     return this.repo.update(id, data);
   }

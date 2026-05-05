@@ -111,6 +111,8 @@ export const api = {
   getDashboardMetrics: () => request<any>('/contacts/dashboard/metrics', { cache: 'no-store' }),
   markAsRead: (contactId: string) => request<any>(`/messages/contact/${contactId}/read`, { method: 'POST' }),
   getContact: (id: string) => request<any>(`/contacts/${id}`),
+  createContact: (data: any) =>
+    request<any>('/contacts', { method: 'POST', body: JSON.stringify(data) }),
   updateContact: (id: string, data: Record<string, any>) =>
     request<any>(`/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   importContacts: (file: File, mapping: Record<string, string>, config: Record<string, any>) => {

@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ContactDetailsSheet } from "@/components/shared/ContactDetailsSheet";
 import { ImportContactsModal } from "@/components/shared/ImportContactsModal";
+import { NewContactModal } from "@/components/shared/NewContactModal";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +68,7 @@ export default function Contatos() {
   const [stage, setStage] = useState<StageId | "">("");
   const [loading, setLoading] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isNewContactModalOpen, setIsNewContactModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   const filtered = useMemo(() => {
@@ -173,7 +175,10 @@ export default function Contatos() {
           >
             <Download className="h-4 w-4 mr-2" /> Exportar
           </Button>
-          <Button className="bg-gradient-primary text-primary-foreground shrink-0">
+          <Button 
+            className="bg-gradient-primary text-primary-foreground shrink-0"
+            onClick={() => setIsNewContactModalOpen(true)}
+          >
             <UserPlus className="h-4 w-4 mr-2" /> Novo contato
           </Button>
         </div>
@@ -325,6 +330,12 @@ export default function Contatos() {
         open={isImportModalOpen} 
         onOpenChange={setIsImportModalOpen}
         onComplete={fetchLeads}
+      />
+
+      <NewContactModal
+        open={isNewContactModalOpen}
+        onOpenChange={setIsNewContactModalOpen}
+        onSuccess={fetchLeads}
       />
 
       <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>

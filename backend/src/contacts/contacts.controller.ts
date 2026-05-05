@@ -24,6 +24,14 @@ export class ContactsController {
     return this.contactsService.findConversations(req.user.companyId);
   }
 
+  @Post()
+  create(@Req() req, @Body() data: any) {
+    return this.contactsService.create({
+      ...data,
+      companyId: req.user.companyId,
+    });
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.contactsService.findOne(id);
