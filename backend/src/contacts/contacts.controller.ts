@@ -1,4 +1,5 @@
-import { Controller, Get, Param, Patch, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Param, Patch, Body, UseGuards, UseInterceptors, UploadedFile, Req } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ContactsService } from './contacts.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 
@@ -30,5 +31,25 @@ export class ContactsController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() data: any) {
     return this.contactsService.update(id, data);
+  }
+
+  @Post('import')
+  @UseInterceptors(FileInterceptor('file'))
+  async importContacts(
+    @Req() req,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: any,
+  ) {
+    const mapping = JSON.parse(body.mapping || '{}');
+    const config = {
+      companyId: req.user.companyId,
+      tag: body.tag,
+      stage: body.stage,
+      ignoreDuplicates: body.ignoreDuplicates === 'true',
+      updateExisting: body.updateExisting === 'true',
+      createWithoutName: body.createWithoutName === 'true',
+    };
+
+    return this.contactsService.importContacts(file.buffer, mapping, config);
   }
 }

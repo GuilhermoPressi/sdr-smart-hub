@@ -5,8 +5,8 @@ import { Contact } from '../contacts/entities/contact.entity';
 import { MessagesService } from '../messages/messages.service';
 import { OpenaiService, AIResponsePayload } from '../openai/openai.service';
 import { AiConfigService } from '../ai-config/ai-config.service';
-import { EvolutionService } from './evolution.service';
 import { AiConfig, ConversationStep } from '../ai-config/entities/ai-config.entity';
+import { EvolutionInstance } from './entities/evolution-instance.entity';
 
 @Controller('webhooks/evolution')
 export class WebhookController {
@@ -19,6 +19,8 @@ export class WebhookController {
     private readonly openaiSvc: OpenaiService,
     private readonly aiConfigSvc: AiConfigService,
     private readonly evoSvc: EvolutionService,
+    @InjectRepository(EvolutionInstance)
+    private readonly instanceRepo: Repository<EvolutionInstance>,
   ) {}
 
   @Post()
@@ -70,16 +72,24 @@ export class WebhookController {
 
     this.logger.log(`📩 Mensagem de ${phone}: "${text.substring(0, 60)}..."`);
 
+    // Busca a instância
+    const instance = await this.instanceRepo.findOneBy({ instanceName });
+    if (!instance) {
+      this.logger.error(`❌ Instância "${instanceName}" não encontrada no banco. Ignorando webhook.`);
+      return { received: true, ignored: true, reason: 'instance_not_found' };
+    }
+
+    const companyId = instance.companyId;
+
     // Dedup
     if (await this.messagesSvc.existsByWaId(waMessageId)) {
       return { received: true, duplicate: true };
     }
 
-    // ── 1. Find or create contact ───────────────────────────────────────
     let contact = await this.contactRepo.findOne({
       where: [
-        { phone },
-        { phone: phone.startsWith('55') ? phone.slice(2) : `55${phone}` },
+        { phone, companyId },
+        { phone: phone.startsWith('55') ? phone.slice(2) : `55${phone}`, companyId },
       ],
     });
 
@@ -96,6 +106,7 @@ export class WebhookController {
         crm: 'Pipeline Comercial',
         tags: ['whatsapp'],
         lastInteraction: new Date(),
+        companyId,
       });
       contact = await this.contactRepo.save(contact);
       this.logger.log(`✅ Novo contato: ${contact.name} (${phone})`);
@@ -140,9 +151,9 @@ export class WebhookController {
     }
 
     // ── 3. Get AI config ─────────────────────────────────────────────────
-    const aiConfig = await this.aiConfigSvc.findActive();
+    const aiConfig = await this.aiConfigSvc.findActive(companyId);
     if (!aiConfig) {
-      this.logger.warn('⚠️ Nenhuma IA ativa.');
+      this.logger.warn(`⚠️ Nenhuma IA ativa para a empresa ${companyId}.`);
       return { received: true, noConfig: true };
     }
 

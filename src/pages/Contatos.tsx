@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { LoadingModal } from "@/components/shared/LoadingModal";
 import { Search, Filter, UserPlus, Tag, Plus, Workflow, X, Upload, Download, Phone, Mail, MessageCircle } from "lucide-react";
 import { ContactDetailsSheet } from "@/components/shared/ContactDetailsSheet";
+import { ImportContactsModal } from "@/components/shared/ImportContactsModal";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -55,6 +56,7 @@ export default function Contatos() {
   const [pipeline, setPipeline] = useState("");
   const [stage, setStage] = useState<StageId | "">("");
   const [loading, setLoading] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   const filtered = useMemo(() => {
     return leads.filter((l) => {
@@ -109,104 +111,8 @@ export default function Contatos() {
     toast.success(`${dataToExport.length} contato(s) exportado(s) com sucesso.`);
   };
 
-  // ── Import contacts from CSV ──
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // handleImport was removed in favor of ImportContactsModal
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const text = event.target?.result as string;
-        const lines = text.split(/\r?\n/).filter((line) => line.trim());
-        if (lines.length < 2) {
-          toast.error("Arquivo vazio ou sem dados.");
-          return;
-        }
-
-        const sep = lines[0].includes(";") ? ";" : ",";
-        const headerRaw = lines[0].split(sep).map((h) => h.replace(/"/g, "").trim().toLowerCase());
-
-        const colMap: Record<string, number> = {};
-        const aliases: Record<string, string[]> = {
-          name: ["nome", "name"],
-          role: ["cargo", "role", "função"],
-          company: ["empresa", "company"],
-          phone: ["telefone", "phone", "celular", "whatsapp"],
-          email: ["e-mail", "email"],
-          linkedin: ["linkedin"],
-          origin: ["origem", "origin"],
-          tags: ["tags", "tag"],
-          crm: ["crm"],
-          stage: ["etapa", "stage"],
-          status: ["status"],
-        };
-
-        for (const [key, names] of Object.entries(aliases)) {
-          const idx = headerRaw.findIndex((h) => names.includes(h));
-          if (idx !== -1) colMap[key] = idx;
-        }
-
-        if (!("name" in colMap) && !("phone" in colMap) && !("email" in colMap)) {
-          toast.error("CSV inválido: precisa ter ao menos coluna Nome, Telefone ou E-mail.");
-          return;
-        }
-
-        const parseLine = (line: string): string[] => {
-          const result: string[] = [];
-          let current = "";
-          let inQuotes = false;
-          for (const char of line) {
-            if (char === '"') { inQuotes = !inQuotes; continue; }
-            if (char === sep && !inQuotes) { result.push(current.trim()); current = ""; continue; }
-            current += char;
-          }
-          result.push(current.trim());
-          return result;
-        };
-
-        const newLeads: Lead[] = [];
-        for (let i = 1; i < lines.length; i++) {
-          const cols = parseLine(lines[i]);
-          const get = (key: string) => (colMap[key] !== undefined ? cols[colMap[key]] || "" : "");
-
-          const name = get("name");
-          if (!name) continue;
-
-          newLeads.push({
-            id: `import_${Date.now()}_${i}`,
-            name,
-            role: get("role"),
-            company: get("company"),
-            phone: get("phone"),
-            email: get("email"),
-            linkedin: get("linkedin"),
-            origin: get("origin") || "Importação",
-            tags: get("tags") ? get("tags").split(",").map((t) => t.trim()).filter(Boolean) : [],
-            crm: get("crm") || "",
-            stage: (get("stage") as StageId) || "novo",
-            status: get("status") || "Novo",
-            iaStatus: "Importado",
-            temperature: "Frio",
-            lastInteraction: "Agora",
-          });
-        }
-
-        if (newLeads.length === 0) {
-          toast.error("Nenhum contato válido encontrado no arquivo.");
-          return;
-        }
-
-        addLeads(newLeads);
-        toast.success(`${newLeads.length} contato(s) importado(s) com sucesso!`);
-      } catch {
-        toast.error("Erro ao processar o arquivo. Verifique o formato CSV.");
-      }
-    };
-    reader.readAsText(file);
-    // Reset input so same file can be imported again
-    e.target.value = "";
-  };
 
   return (
     <>
@@ -220,17 +126,10 @@ export default function Contatos() {
           <FilterSelect label="Tag" value={tag} onChange={setTag} options={["all", ...allTags]} />
           <FilterSelect label="Status" value={status} onChange={setStatus} options={["all", ...allStatuses]} />
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv"
-            className="hidden"
-            onChange={handleImport}
-          />
           <Button
             variant="outline"
             className="shrink-0"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => setIsImportModalOpen(true)}
           >
             <Upload className="h-4 w-4 mr-2" /> Importar
           </Button>
@@ -373,6 +272,12 @@ export default function Contatos() {
       />
 
       <ContactDetailsSheet viewingContact={viewingContact} setViewingContact={setViewingContact} />
+      
+      <ImportContactsModal 
+        open={isImportModalOpen} 
+        onOpenChange={setIsImportModalOpen}
+        onComplete={fetchLeads}
+      />
     </>
   );
 }

@@ -16,6 +16,7 @@ import { AuthModule } from './auth/auth.module';
 import { CampaignRecipient } from './campaigns/entities/campaign-recipient.entity';
 import { UsersModule } from './users/users.module';
 import { User } from './users/entities/user.entity';
+import { EvolutionInstance } from './evolution/entities/evolution-instance.entity';
 
 @Module({
   imports: [
@@ -26,7 +27,7 @@ import { User } from './users/entities/user.entity';
       username: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASS || 'postgres',
       database: process.env.DB_NAME || 'sdr_smart_hub',
-      entities: [Contact, ApifyLeadSearch, Message, AiConfig, Campaign, CampaignRecipient, User],
+      entities: [Contact, ApifyLeadSearch, Message, AiConfig, Campaign, CampaignRecipient, User, EvolutionInstance],
       synchronize: true,
       ssl: false,
     }),

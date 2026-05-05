@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Param, Body, Logger, NotFoundException, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Body, Logger, NotFoundException, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EvolutionService } from './evolution.service';
@@ -8,6 +8,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
+import { EvolutionInstance } from './entities/evolution-instance.entity';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('evolution')
@@ -19,33 +20,52 @@ export class EvolutionController {
     private readonly messagesSvc: MessagesService,
     @InjectRepository(Contact)
     private readonly contactRepo: Repository<Contact>,
+    @InjectRepository(EvolutionInstance)
+    private readonly instanceRepo: Repository<EvolutionInstance>,
   ) {}
 
-  @Roles(UserRole.ADMIN)
   @Post('instances')
-  async createInstance(@Body() body: { instanceName: string; webhookUrl?: string }) {
-    return this.evo.createInstance(body.instanceName, body.webhookUrl);
+  async createInstance(@Req() req, @Body() body: { instanceName: string; webhookUrl?: string }) {
+    const companyId = req.user.companyId;
+    if (!companyId) throw new UnauthorizedException('Usuário sem empresa vinculada');
+    // instanceName from body is actually the "name" they want to display
+    return this.evo.createInstance(body.instanceName, companyId, body.webhookUrl);
   }
 
   @Get('instances')
-  async listInstances() {
-    return this.evo.listInstances();
+  async listInstances(@Req() req) {
+    const companyId = req.user.companyId;
+    if (!companyId && req.user.role !== UserRole.ADMIN) {
+      return [];
+    }
+    // If it's a super admin without companyId, maybe list all or none. Let's list all if no companyId, else list by companyId
+    return this.evo.listInstances(companyId);
   }
 
   @Get('instances/:name/qrcode')
-  async getQrCode(@Param('name') name: string) {
+  async getQrCode(@Req() req, @Param('name') name: string) {
+    const companyId = req.user.companyId;
+    if (companyId) {
+      const instance = await this.instanceRepo.findOneBy({ instanceName: name, companyId });
+      if (!instance) throw new NotFoundException('Instância não encontrada para este cliente.');
+    }
     return this.evo.getQrCode(name);
   }
 
   @Get('instances/:name/status')
-  async getStatus(@Param('name') name: string) {
+  async getStatus(@Req() req, @Param('name') name: string) {
+    const companyId = req.user.companyId;
+    if (companyId) {
+      const instance = await this.instanceRepo.findOneBy({ instanceName: name, companyId });
+      if (!instance) throw new NotFoundException('Instância não encontrada para este cliente.');
+    }
     return this.evo.getConnectionState(name);
   }
 
-  @Roles(UserRole.ADMIN)
   @Delete('instances/:name')
-  async deleteInstance(@Param('name') name: string) {
-    return this.evo.deleteInstance(name);
+  async deleteInstance(@Req() req, @Param('name') name: string) {
+    const companyId = req.user.companyId;
+    return this.evo.deleteInstance(name, companyId);
   }
 
   /**
@@ -53,20 +73,42 @@ export class EvolutionController {
    * Envia mensagem E salva no banco para aparecer no histórico
    */
   @Post('send-text')
-  async sendText(@Body() body: { instanceName: string; phone: string; text: string }) {
-    const { instanceName, phone, text } = body;
+  async sendText(@Req() req, @Body() body: { instanceName?: string; phone: string; text: string; contactId?: string }) {
+    const companyId = req.user.companyId;
+    const { instanceName, phone, text, contactId } = body;
+
+    let targetInstanceName = instanceName;
+
+    // Busca a instância correta (se não for passada, busca a primeira do cliente)
+    if (!targetInstanceName && companyId) {
+      const instances = await this.instanceRepo.find({ where: { companyId, status: 'connected' } });
+      if (instances.length > 0) {
+        targetInstanceName = instances[0].instanceName;
+      }
+    }
+
+    if (!targetInstanceName) {
+      throw new NotFoundException('Nenhuma instância conectada encontrada para este envio.');
+    }
 
     // 1. Envia via Evolution
-    const result = await this.evo.sendText(instanceName, phone, text);
+    const result = await this.evo.sendText(targetInstanceName, phone, text);
 
-    // 2. Busca o contato pelo telefone para salvar a mensagem
+    // 2. Busca o contato pelo telefone (e companyId) para salvar a mensagem
     const normalizedPhone = phone.replace(/\D/g, '');
+    const contactWhere: any = [
+      { phone: normalizedPhone },
+      { phone: `55${normalizedPhone}` },
+      { phone },
+    ];
+    
+    // Adicionar filtro de companyId se houver
+    const finalWhere = companyId 
+      ? contactWhere.map(w => ({ ...w, companyId }))
+      : contactWhere;
+
     const contact = await this.contactRepo.findOne({
-      where: [
-        { phone: normalizedPhone },
-        { phone: `55${normalizedPhone}` },
-        { phone },
-      ],
+      where: finalWhere,
     });
 
     if (contact) {
@@ -74,7 +116,7 @@ export class EvolutionController {
         contactId: contact.id,
         text,
         sender: 'human',
-        instanceName,
+        instanceName: targetInstanceName,
         status: 'sent',
       });
 

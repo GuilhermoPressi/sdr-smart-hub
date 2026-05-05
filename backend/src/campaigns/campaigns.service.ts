@@ -54,7 +54,7 @@ export class CampaignsService {
       name: dto.name || `Disparo ${new Date().toLocaleDateString('pt-BR')}`,
       message: dto.message,
       messageType: dto.messageType || 'free_text',
-      instanceName: dto.instanceName || 'Gpressi',
+      instanceName: dto.instanceName,
       sourceType: dto.sourceType,
       sourceId: dto.sourceId,
       delaySeconds: Math.max(3, dto.delaySeconds || 8),

@@ -15,23 +15,22 @@ export default function ConectarWhatsapp() {
   const { connections, setConnection } = useApp();
   const [loadingKey, setLoadingKey] = useState<null | "official" | "evolution">(null);
   const [number, setNumber] = useState("");
+  const [newInstanceName, setNewInstanceName] = useState("rodrigo");
+  const [instances, setInstances] = useState<any[]>([]);
+  const [selectedInstance, setSelectedInstance] = useState<any>(null);
   const [qrCode, setQrCode] = useState<string | null>(null);
-  const [instanceName] = useState("Gpressi");
   const [isChecking, setIsChecking] = useState(true);
-
-  // Check initial status
   useEffect(() => {
-    const checkStatus = async () => {
+    const loadInstances = async () => {
       try {
-        const instances = await api.listInstances();
-        const instance = instances.find(i => i.name === instanceName);
-        
-        if (instance) {
-          if (instance.connectionStatus === 'open') {
-            setConnection("evolution", "connected" as any);
-          } else {
-            setConnection("evolution", "pending");
-            fetchQrCode();
+        const data = await api.listInstances();
+        setInstances(data);
+        if (data.length > 0) {
+          const connected = data.find(i => i.status === 'connected' || i.status === 'open');
+          setSelectedInstance(connected || data[0]);
+          setConnection("evolution", connected ? ("connected" as any) : "pending");
+          if (!connected && data[0].status === 'pending') {
+            fetchQrCode(data[0].instanceName);
           }
         } else {
           setConnection("evolution", "disconnected");
@@ -43,26 +42,26 @@ export default function ConectarWhatsapp() {
       }
     };
 
-    checkStatus();
-  }, []);
+    loadInstances();
+  }, [setConnection]);
 
-  // Poll status if pending
+  // Poll status se houver instância pendente selecionada
   useEffect(() => {
     let interval: any;
-    if (connections.evolution === "pending") {
+    if (selectedInstance && selectedInstance.status === "pending") {
       interval = setInterval(async () => {
         try {
-          const status = await api.getInstanceStatus(instanceName);
+          const status = await api.getInstanceStatus(selectedInstance.instanceName);
           const state = status?.instance?.state || status?.state;
           
           if (state === 'open') {
             setConnection("evolution", "connected" as any);
             setQrCode(null);
+            setSelectedInstance(prev => ({ ...prev, status: 'connected' }));
             toast.success("WhatsApp conectado com sucesso!");
             clearInterval(interval);
           } else if (state === 'disconnected' || state === 'close') {
-            // If it disconnected, try to get QR again
-            if (!qrCode) fetchQrCode();
+            if (!qrCode) fetchQrCode(selectedInstance.instanceName);
           }
         } catch (e) {
           // ignore
@@ -70,20 +69,15 @@ export default function ConectarWhatsapp() {
       }, 5000);
     }
     return () => clearInterval(interval);
-  }, [connections.evolution, qrCode]);
+  }, [selectedInstance, qrCode]);
 
-  const fetchQrCode = async () => {
+  const fetchQrCode = async (instName: string) => {
     try {
-      const data = await api.getQrCode(instanceName);
-      // Evolution v2: { qrcode: { base64: "data:image/png;base64,..." } }
-      // Evolution v1: { base64: "..." } or { code: "..." }
+      const data = await api.getQrCode(instName);
       const base64 = data?.qrcode?.base64 || data?.base64 || data?.code || null;
       if (base64) {
-        // Garante prefixo data URI
         const src = base64.startsWith('data:') ? base64 : `data:image/png;base64,${base64}`;
         setQrCode(src);
-      } else {
-        console.warn('QR Code não encontrado na resposta:', JSON.stringify(data));
       }
     } catch (error) {
       console.error("Erro ao buscar QR Code", error);
@@ -91,30 +85,41 @@ export default function ConectarWhatsapp() {
   };
 
   const handleConnectEvolution = async () => {
+    if (!newInstanceName.trim()) {
+      toast.error("Informe um nome para a instância.");
+      return;
+    }
     setLoadingKey("evolution");
     try {
-      // Try to create or just get QR if already exists
-      const created = await api.createInstance(instanceName);
-      // Evolution pode retornar QR já no create
-      const base64 = created?.qrcode?.base64 || created?.base64;
+      const created = await api.createInstance(newInstanceName);
+      const data = await api.listInstances();
+      setInstances(data);
+      const newInst = data.find(i => i.instanceName === created.instanceName) || created;
+      setSelectedInstance(newInst);
+      
+      const base64 = created?.qrcode?.base64 || created?.base64 || created?.qrCode;
       if (base64) { const src = base64.startsWith('data:') ? base64 : `data:image/png;base64,${base64}`; setQrCode(src); }
-      await fetchQrCode();
+      else await fetchQrCode(newInst.instanceName);
+      
       setConnection("evolution", "pending");
+      setNewInstanceName("");
     } catch (error: any) {
-      // If already exists, just fetch QR
-      await fetchQrCode();
-      setConnection("evolution", "pending");
+      toast.error("Erro ao criar instância");
     } finally {
       setLoadingKey(null);
     }
   };
 
-  const handleDisconnect = async () => {
+  const handleDisconnect = async (instName: string) => {
     if (!confirm("Deseja realmente desconectar? A instância será removida.")) return;
     try {
-      await api.deleteInstance(instanceName);
-      setConnection("evolution", "disconnected");
-      setQrCode(null);
+      await api.deleteInstance(instName);
+      setInstances(instances.filter(i => i.instanceName !== instName));
+      if (selectedInstance?.instanceName === instName) {
+        setSelectedInstance(null);
+        setConnection("evolution", "disconnected");
+        setQrCode(null);
+      }
       toast.success("Desconectado com sucesso.");
     } catch (error) {
       toast.error("Erro ao desconectar.");
@@ -189,35 +194,53 @@ export default function ConectarWhatsapp() {
                 </div>
                 <div>
                   <h3 className="font-display font-semibold text-foreground">WhatsApp Evolution API</h3>
-                  <p className="text-xs text-muted-foreground">Atendimento automatizado com IA.</p>
+                  <p className="text-xs text-muted-foreground">Suas conexões ativas</p>
                 </div>
               </div>
-              <StatusVariant state={connections.evolution} />
             </div>
 
+            {instances.length > 0 && (
+              <div className="space-y-2 max-h-[120px] overflow-y-auto pr-1">
+                {instances.map(inst => (
+                  <div key={inst.id} className={`flex items-center justify-between p-2 rounded-lg border ${selectedInstance?.id === inst.id ? 'border-primary bg-primary/5' : 'border-border-subtle bg-background/50'} cursor-pointer`} onClick={() => { setSelectedInstance(inst); setConnection("evolution", inst.status === 'connected' ? ('connected' as any) : 'pending'); if(inst.status !== 'connected') fetchQrCode(inst.instanceName); }}>
+                    <div>
+                      <p className="text-sm font-medium">{inst.name}</p>
+                      <p className="text-[10px] text-muted-foreground font-mono">ID: {inst.instanceName}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <StatusVariant state={inst.status === 'connected' ? 'connected' : 'pending'} />
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive hover:bg-destructive/10" onClick={(e) => { e.stopPropagation(); handleDisconnect(inst.instanceName); }}>
+                        <LogOut className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="aspect-square max-w-[240px] mx-auto w-full rounded-2xl border-2 border-dashed border-border bg-background/40 grid place-items-center text-center p-6 relative overflow-hidden">
-              {qrCode ? (
+              {!selectedInstance ? (
+                 <div className="space-y-2">
+                   <QrCode className="h-12 w-12 text-muted-foreground/60 mx-auto" />
+                   <p className="text-sm font-medium text-foreground/80">Nenhuma instância selecionada</p>
+                 </div>
+              ) : qrCode && selectedInstance.status !== 'connected' ? (
                 <div className="space-y-3 animate-in fade-in zoom-in duration-500">
                   <img src={qrCode} alt="QR Code" className="w-full aspect-square rounded-lg shadow-glow-sm" />
-                  <p className="text-[10px] text-muted-foreground animate-pulse">Escaneie para conectar</p>
+                  <p className="text-[10px] text-muted-foreground animate-pulse">Escaneie para conectar {selectedInstance.name}</p>
                 </div>
-              ) : connections.evolution === ("connected" as any) ? (
+              ) : selectedInstance.status === 'connected' ? (
                 <div className="space-y-3 text-whatsapp">
                   <div className="h-16 w-16 rounded-full bg-whatsapp/20 grid place-items-center mx-auto">
                     <CheckCircle2 className="h-8 w-8" />
                   </div>
                   <p className="text-sm font-semibold">WhatsApp Conectado</p>
-                  <p className="text-[11px] text-muted-foreground">Pronto para automatizar com IA.</p>
+                  <p className="text-[11px] text-muted-foreground">{selectedInstance.name} pronto.</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <QrCode className="h-12 w-12 text-muted-foreground/60 mx-auto" />
-                  <p className="text-sm font-medium text-foreground/80">
-                    {isChecking ? "Verificando status..." : "QR Code será exibido aqui"}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Clique no botão abaixo para gerar a conexão.
-                  </p>
+                  <RefreshCw className="h-8 w-8 text-muted-foreground mx-auto animate-spin" />
+                  <p className="text-sm font-medium text-foreground/80">Carregando...</p>
                 </div>
               )}
             </div>
@@ -230,34 +253,31 @@ export default function ConectarWhatsapp() {
             </div>
 
             <div className="flex gap-2">
-              {connections.evolution === ("connected" as any) || connections.evolution === "pending" ? (
-                <>
-                  <Button
-                    variant="outline"
-                    onClick={fetchQrCode}
-                    className="flex-1 border-border-subtle"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" /> Atualizar
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={handleDisconnect}
-                    className="flex-1"
-                  >
-                    <LogOut className="h-4 w-4 mr-2" /> Desconectar
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  onClick={handleConnectEvolution}
-                  disabled={isChecking || loadingKey === "evolution"}
-                  className="w-full bg-whatsapp text-whatsapp-foreground hover:bg-whatsapp/90 shadow-glow-sm"
-                >
-                  <MessageCircle className="h-4 w-4 mr-2" />
-                  {isChecking ? "Verificando..." : "Conectar Evolution"}
-                </Button>
-              )}
+              <Input
+                placeholder="Ex: rodrigo"
+                value={newInstanceName}
+                onChange={(e) => setNewInstanceName(e.target.value)}
+                className="flex-1"
+              />
+              <Button
+                onClick={handleConnectEvolution}
+                disabled={isChecking || loadingKey === "evolution" || !newInstanceName}
+                className="bg-whatsapp text-whatsapp-foreground hover:bg-whatsapp/90 shadow-glow-sm"
+              >
+                <MessageCircle className="h-4 w-4 mr-2" />
+                Criar
+              </Button>
             </div>
+            
+            {selectedInstance && selectedInstance.status !== 'connected' && (
+              <Button
+                variant="outline"
+                onClick={() => fetchQrCode(selectedInstance.instanceName)}
+                className="w-full border-border-subtle"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" /> Atualizar QR Code
+              </Button>
+            )}
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-const API_BASE_URL = (import.meta.env.VITE_BACKEND_URL || 'https://api.sdr.grupogpressi.com.br').replace(/\/$/, '');
+const API_BASE_URL = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -40,7 +40,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     }
   } catch {}
 
-  const headers: any = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  const headers: any = { ...(options.headers || {}) };
+  if (!(options.body instanceof FormData)) {
+    headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+  }
+  
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -109,13 +113,22 @@ export const api = {
   getContact: (id: string) => request<any>(`/contacts/${id}`),
   updateContact: (id: string, data: Record<string, any>) =>
     request<any>(`/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  importContacts: (file: File, mapping: Record<string, string>, config: Record<string, any>) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('mapping', JSON.stringify(mapping));
+    Object.entries(config).forEach(([k, v]) => {
+      if (v !== undefined && v !== null) formData.append(k, String(v));
+    });
+    return request<any>('/contacts/import', { method: 'POST', body: formData });
+  },
 
   // Messages
   getMessages: (contactId: string, limit = 50) =>
     request<any[]>(`/messages/contact/${contactId}?limit=${limit}`),
 
   // Evolution / WhatsApp
-  sendText: (instanceName: string, phone: string, text: string) =>
+  sendText: (instanceName: string | undefined, phone: string, text: string) =>
     request<any>('/evolution/send-text', { method: 'POST', body: JSON.stringify({ instanceName, phone, text }) }),
   createInstance: (instanceName: string) =>
     request<any>('/evolution/instances', { method: 'POST', body: JSON.stringify({ instanceName }) }),

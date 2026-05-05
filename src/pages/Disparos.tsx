@@ -310,7 +310,7 @@ export default function Disparos() {
           <div><h3 className="font-display font-semibold">Configuração do Envio</h3><p className="text-xs text-muted-foreground mt-1">Controle de velocidade e anti-bloqueio.</p></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5"><Label className="text-xs">Nome do disparo (opcional)</Label><Input value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Prospecção maio" /></div>
-            <div className="space-y-1.5"><Label className="text-xs">Instância Evolution</Label><Input value="Gpressi" disabled className="opacity-60" /></div>
+            <div className="space-y-1.5"><Label className="text-xs">Instância Evolution</Label><Input value="Automática" disabled className="opacity-60" /></div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">

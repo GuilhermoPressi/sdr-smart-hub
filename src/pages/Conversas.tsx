@@ -144,7 +144,7 @@ export default function Conversas() {
     setMessages((prev) => [...prev, tempMsg]);
 
     try {
-      await api.sendText("Gpressi", activeConv.phone, text);
+      await api.sendText(undefined, activeConv.phone, text);
       // Aguarda 800ms para o backend salvar antes de recarregar
       await new Promise(r => setTimeout(r, 800));
       await loadMessages(activeConv.id);

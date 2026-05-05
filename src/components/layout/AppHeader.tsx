@@ -31,11 +31,13 @@ export function AppHeader() {
   useEffect(() => {
     const check = async () => {
       try {
-        const status = await api.getInstanceStatus("Gpressi");
-        const state = status?.instance?.state || status?.state;
-        if (state === "open") {
+        const instances = await api.listInstances();
+        const anyConnected = instances.some(i => i.status === "connected" || i.status === "open");
+        if (anyConnected) {
           setConnection("evolution", "connected" as any);
-        } else if (state === "close" || state === "disconnected") {
+        } else if (instances.length > 0) {
+          setConnection("evolution", "pending");
+        } else {
           setConnection("evolution", "disconnected");
         }
       } catch {

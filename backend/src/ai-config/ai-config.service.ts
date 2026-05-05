@@ -50,8 +50,12 @@ export class AiConfigService {
     return this.repo.findOneBy({ id });
   }
 
-  async findActive(): Promise<AiConfig | null> {
-    return this.repo.findOneBy({ active: true });
+  async findActive(companyId?: string): Promise<AiConfig | null> {
+    const where: any = { active: true };
+    if (companyId) {
+      where.companyId = companyId;
+    }
+    return this.repo.findOneBy(where);
   }
 
   async save(data: Partial<AiConfig>): Promise<AiConfig> {

@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Contact } from './entities/contact.entity';
+import { parse } from 'csv-parse/sync';
 
 @Injectable()
 export class ContactsService {
@@ -116,5 +117,156 @@ export class ContactsService {
     console.log('[ContactsService] Totais:', result);
 
     return result;
+  }
+
+  async importContacts(
+    buffer: Buffer,
+    mapping: Record<string, string>,
+    config: {
+      companyId: string;
+      tag?: string;
+      stage?: string;
+      ignoreDuplicates: boolean;
+      updateExisting: boolean;
+      createWithoutName: boolean;
+    },
+  ) {
+    const startTime = Date.now();
+    
+    // 1. Parse CSV
+    const records = parse(buffer, {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+      delimiter: [',', ';', '\t'], // Suporta múltiplos delimitadores
+    });
+
+    const stats = {
+      total: records.length,
+      imported: 0,
+      duplicates: 0,
+      invalid: 0,
+    };
+
+    if (records.length === 0) return stats;
+
+    // 2. Coletar todos os telefones para busca em lote
+    const phoneField = Object.entries(mapping).find(([sys, csv]) => sys === 'phone')?.[1];
+    if (!phoneField) throw new Error('Mapeamento de telefone é obrigatório.');
+
+    const normalizedPhones = records
+      .map(r => this.normalizePhone(r[phoneField]))
+      .filter(p => p.length >= 10);
+
+    // 3. Buscar contatos existentes da empresa
+    const existingContacts = await this.repo.find({
+      where: {
+        companyId: config.companyId,
+        phone: In(normalizedPhones),
+      },
+    });
+
+    const existingMap = new Map(existingContacts.map(c => [c.phone, c]));
+    const toSave: Contact[] = [];
+
+    // 4. Processar cada registro
+    for (const record of records) {
+      const rawPhone = record[phoneField];
+      const phone = this.normalizePhone(rawPhone);
+
+      if (phone.length < 10) {
+        stats.invalid++;
+        continue;
+      }
+
+      const existing = existingMap.get(phone);
+      if (existing) {
+        if (config.ignoreDuplicates) {
+          stats.duplicates++;
+          continue;
+        }
+        if (!config.updateExisting) {
+          stats.duplicates++;
+          continue;
+        }
+        // Preparar para atualização
+        this.mapRecordToContact(record, mapping, existing);
+        this.applyConfigToContact(config, existing);
+        toSave.push(existing);
+      } else {
+        // Novo contato
+        const nameField = Object.entries(mapping).find(([sys, csv]) => sys === 'name')?.[1];
+        const name = nameField ? record[nameField] : '';
+        
+        if (!name && !config.createWithoutName) {
+          stats.invalid++;
+          continue;
+        }
+
+        const newContact = this.repo.create({
+          phone,
+          companyId: config.companyId,
+          source: 'import',
+        });
+        this.mapRecordToContact(record, mapping, newContact);
+        this.applyConfigToContact(config, newContact);
+        toSave.push(newContact);
+      }
+    }
+
+    // 5. Salvar em lote
+    if (toSave.length > 0) {
+      // TypeORM save lida com insert/update baseado no ID
+      await this.repo.save(toSave, { chunk: 100 });
+      stats.imported = toSave.length;
+    }
+
+    const duration = Date.now() - startTime;
+    console.log(`[ContactsService] Importação concluída em ${duration}ms.`, stats);
+
+    return stats;
+  }
+
+  private mapRecordToContact(record: any, mapping: Record<string, string>, contact: Contact) {
+    for (const [sysField, csvField] of Object.entries(mapping)) {
+      if (!csvField || sysField === 'phone') continue; // phone já tratado
+      
+      const value = record[csvField];
+      if (value === undefined || value === null) continue;
+
+      switch (sysField) {
+        case 'name': contact.name = value; break;
+        case 'email': contact.email = value; break;
+        case 'companyName': contact.companyName = value; break;
+        case 'jobTitle': contact.jobTitle = value; break;
+        default:
+          // Campos personalizados no metadata
+          if (!contact.metadata) contact.metadata = {};
+          contact.metadata[sysField] = value;
+      }
+    }
+  }
+
+  private applyConfigToContact(config: any, contact: Contact) {
+    if (config.tag) {
+      if (!contact.tags) contact.tags = [];
+      if (!contact.tags.includes(config.tag)) {
+        contact.tags.push(config.tag);
+      }
+    }
+    if (config.stage) {
+      contact.stage = config.stage;
+    }
+  }
+
+  private normalizePhone(phone: string | any): string {
+    if (!phone) return '';
+    const str = String(phone);
+    let digits = str.replace(/\D/g, '');
+    if (digits.startsWith('0')) digits = digits.slice(1);
+    if (digits.length >= 10 && digits.length <= 11 && !digits.startsWith('55')) {
+      digits = '55' + digits;
+    }
+    return digits;
   }
 }

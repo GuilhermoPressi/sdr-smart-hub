@@ -34,7 +34,7 @@ export class Campaign {
   templateVariables: string[];
 
   /** Evolution instance to send from */
-  @Column({ name: 'instance_name', default: 'Gpressi' })
+  @Column({ name: 'instance_name', nullable: true })
   instanceName: string;
 
   /** Source: crm | list | tag | csv */
