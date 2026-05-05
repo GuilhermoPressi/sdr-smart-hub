@@ -12,12 +12,6 @@ export class ContactsService {
   ) {}
 
   findAll(companyId: string) {
-    if (companyId === 'default-company') {
-      return this.repo.find({
-        where: [ { companyId }, { companyId: IsNull() } ],
-        order: { updatedAt: 'DESC' }
-      });
-    }
     return this.repo.find({ 
       where: { companyId },
       order: { updatedAt: 'DESC' } 
@@ -62,7 +56,7 @@ export class ContactsService {
         LIMIT 1
       ) m ON true
       LEFT JOIN messages m2 ON m2.contact_id = c.id
-      WHERE (c.company_id = $1 OR ($1 = 'default-company' AND c.company_id IS NULL))
+      WHERE c.company_id = $1
       GROUP BY c.id, m.text, m.sender, m.created_at
       ORDER BY m.created_at DESC
     `, [companyId]);
@@ -89,7 +83,7 @@ export class ContactsService {
         COUNT(*) FILTER (WHERE handoff_at IS NOT NULL) AS "aiHandoffs",
         (SELECT COUNT(DISTINCT contact_id) FROM messages m JOIN contacts c2 ON m.contact_id = c2.id WHERE c2.company_id = $1 AND m.sender = 'lead' AND LENGTH(trim(m.text)) >= 3) AS "totalResponded"
       FROM contacts
-      WHERE (company_id = $1 OR ($1 = 'default-company' AND company_id IS NULL))
+      WHERE company_id = $1
     `, [companyId]);
 
     const totalContacts = parseInt(metrics.totalContacts || '0', 10);
@@ -172,7 +166,7 @@ export class ContactsService {
     // 3. Buscar contatos existentes da empresa
     const existingContacts = await this.repo.find({
       where: {
-        companyId: config.companyId === 'default-company' ? null : config.companyId,
+        companyId: config.companyId,
         phone: In(normalizedPhones),
       },
     });
@@ -282,10 +276,25 @@ export class ContactsService {
   }
 
   async deleteBulk(ids: string[], companyId: string) {
+    console.log(`[ContactsService] Iniciando deleteBulk: companyId=${companyId} | Qtd IDs=${ids.length}`);
+    
+    // Contagem antes
+    const beforeCount = await this.repo.count({ where: { companyId } });
+    
     const result = await this.repo.delete({
       id: In(ids),
       companyId: companyId,
     });
-    return { deleted: result.affected || 0 };
+    
+    // Contagem depois
+    const afterCount = await this.repo.count({ where: { companyId } });
+    
+    console.log(`[ContactsService] Delete concluído. Antes: ${beforeCount} | Depois: ${afterCount} | Afetados: ${result.affected}`);
+    
+    return { 
+      deleted: result.affected || 0,
+      before: beforeCount,
+      after: afterCount
+    };
   }
 }

@@ -141,12 +141,6 @@ export class EvolutionService {
   }
 
   async listInstances(companyId?: string) {
-    if (companyId === 'default-company') {
-      return this.instanceRepo.find({
-        where: [ { companyId }, { companyId: IsNull() } ],
-        order: { createdAt: 'DESC' }
-      });
-    }
     const where = companyId ? { companyId } : {};
     return this.instanceRepo.find({ where, order: { createdAt: 'DESC' } });
   }

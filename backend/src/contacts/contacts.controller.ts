@@ -15,6 +15,7 @@ export class ContactsController {
 
   @Get('dashboard/metrics')
   getDashboardMetrics(@Req() req) {
+    console.log('[ContactsController] Dashboard solicitado para companyId:', req.user.companyId);
     return this.contactsService.getDashboardMetrics(req.user.companyId);
   }
 

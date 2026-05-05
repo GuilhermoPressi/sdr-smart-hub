@@ -102,6 +102,7 @@ export default function Contatos() {
       await bulkDeleteLeads(selected);
       toast.success(`${selected.length} contatos excluídos com sucesso.`);
       setSelected([]);
+      fetchLeads(); // Force refetch from server to ensure consistency
     } catch (err: any) {
       toast.error(err.message || "Erro ao excluir contatos");
     } finally {
