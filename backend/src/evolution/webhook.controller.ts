@@ -7,6 +7,7 @@ import { OpenaiService, AIResponsePayload } from '../openai/openai.service';
 import { AiConfigService } from '../ai-config/ai-config.service';
 import { AiConfig, ConversationStep } from '../ai-config/entities/ai-config.entity';
 import { EvolutionInstance } from './entities/evolution-instance.entity';
+import { EvolutionService } from './evolution.service';
 
 @Controller('webhooks/evolution')
 export class WebhookController {
