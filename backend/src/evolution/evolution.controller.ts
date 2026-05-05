@@ -26,8 +26,7 @@ export class EvolutionController {
 
   @Post('instances')
   async createInstance(@Req() req, @Body() body: { instanceName: string; webhookUrl?: string }) {
-    const companyId = req.user.companyId;
-    if (!companyId) throw new UnauthorizedException('Usuário sem empresa vinculada');
+    const companyId = req.user.companyId || 'default-company';
     // instanceName from body is actually the "name" they want to display
     return this.evo.createInstance(body.instanceName, companyId, body.webhookUrl);
   }

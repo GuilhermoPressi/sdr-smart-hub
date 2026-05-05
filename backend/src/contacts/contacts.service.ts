@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, IsNull } from 'typeorm';
 import { Contact } from './entities/contact.entity';
 import { parse } from 'csv-parse/sync';
 
@@ -12,6 +12,12 @@ export class ContactsService {
   ) {}
 
   findAll(companyId: string) {
+    if (companyId === 'default-company') {
+      return this.repo.find({
+        where: [ { companyId }, { companyId: IsNull() } ],
+        order: { updatedAt: 'DESC' }
+      });
+    }
     return this.repo.find({ 
       where: { companyId },
       order: { updatedAt: 'DESC' } 
@@ -56,7 +62,7 @@ export class ContactsService {
         LIMIT 1
       ) m ON true
       LEFT JOIN messages m2 ON m2.contact_id = c.id
-      WHERE c.company_id = $1
+      WHERE (c.company_id = $1 OR ($1 = 'default-company' AND c.company_id IS NULL))
       GROUP BY c.id, m.text, m.sender, m.created_at
       ORDER BY m.created_at DESC
     `, [companyId]);
@@ -83,7 +89,7 @@ export class ContactsService {
         COUNT(*) FILTER (WHERE handoff_at IS NOT NULL) AS "aiHandoffs",
         (SELECT COUNT(DISTINCT contact_id) FROM messages m JOIN contacts c2 ON m.contact_id = c2.id WHERE c2.company_id = $1 AND m.sender = 'lead' AND LENGTH(trim(m.text)) >= 3) AS "totalResponded"
       FROM contacts
-      WHERE company_id = $1
+      WHERE (company_id = $1 OR ($1 = 'default-company' AND company_id IS NULL))
     `, [companyId]);
 
     const totalContacts = parseInt(metrics.totalContacts || '0', 10);
@@ -166,7 +172,7 @@ export class ContactsService {
     // 3. Buscar contatos existentes da empresa
     const existingContacts = await this.repo.find({
       where: {
-        companyId: config.companyId,
+        companyId: config.companyId === 'default-company' ? null : config.companyId,
         phone: In(normalizedPhones),
       },
     });

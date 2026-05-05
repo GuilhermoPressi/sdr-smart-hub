@@ -40,7 +40,12 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
-    const payload = { sub: user.id, email: user.email, role: user.role };
+    const payload = { 
+      sub: user.id, 
+      email: user.email, 
+      role: user.role, 
+      companyId: user.companyId || (user.role === UserRole.ADMIN ? 'default-company' : null) 
+    };
     
     const { passwordHash, ...result } = user;
     

@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import axios, { AxiosInstance } from 'axios';
 import { EvolutionInstance } from './entities/evolution-instance.entity';
 
@@ -141,6 +141,12 @@ export class EvolutionService {
   }
 
   async listInstances(companyId?: string) {
+    if (companyId === 'default-company') {
+      return this.instanceRepo.find({
+        where: [ { companyId }, { companyId: IsNull() } ],
+        order: { createdAt: 'DESC' }
+      });
+    }
     const where = companyId ? { companyId } : {};
     return this.instanceRepo.find({ where, order: { createdAt: 'DESC' } });
   }
