@@ -162,7 +162,8 @@ export class CampaignsService {
             recipient.phone,
             campaign.mediaUrl,
             caption,
-            campaign.messageType as any
+            campaign.messageType as any,
+            campaign.mediaFileName
           );
         }
 

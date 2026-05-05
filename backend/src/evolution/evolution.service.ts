@@ -166,6 +166,7 @@ export class EvolutionService {
     mediaUrl: string,
     caption?: string,
     mediatype: 'image' | 'video' | 'audio' | 'document' = 'document',
+    fileName?: string,
   ) {
     const number = phone.replace(/\D/g, '');
     const { data } = await this.client.post(
@@ -175,6 +176,7 @@ export class EvolutionService {
         mediatype,
         media: mediaUrl,
         caption: caption || '',
+        fileName: fileName || undefined,
       },
     );
     return data;
@@ -193,18 +195,7 @@ export class EvolutionService {
   }
 
   async sendDocument(instanceName: string, phone: string, mediaUrl: string, fileName: string, caption?: string) {
-    const number = phone.replace(/\D/g, '');
-    const { data } = await this.client.post(
-      `/message/sendMedia/${instanceName}`,
-      {
-        number,
-        mediatype: 'document',
-        media: mediaUrl,
-        fileName: fileName,
-        caption: caption || '',
-      },
-    );
-    return data;
+    return this.sendMedia(instanceName, phone, mediaUrl, caption, 'document', fileName);
   }
 
   // ─── Webhook Settings ─────────────────────────────────────
