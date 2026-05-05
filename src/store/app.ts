@@ -244,6 +244,11 @@ export const useApp = create<Store>()(
       api.updateContact(id, patch).catch(console.error);
     });
   },
+  bulkUpdate: (ids, patch) =>
+    set((s) => ({
+      leads: s.leads.map((l) =>
+        ids.includes(l.id)
+          ? { ...l, ...patch, tags: patch.tags ? Array.from(new Set([...l.tags, ...patch.tags])) : l.tags }
           : l,
       ),
     })),
