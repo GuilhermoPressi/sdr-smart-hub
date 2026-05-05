@@ -82,6 +82,9 @@ export default function Contatos() {
   const allTags = Array.from(new Set(leads.flatMap((l) => l.tags)));
   const allOrigins = Array.from(new Set(leads.map((l) => l.origin)));
   const allStatuses = Array.from(new Set(leads.map((l) => l.status)));
+  
+  const allSelected = filtered.length > 0 && filtered.every((l) => selected.includes(l.id));
+
   const toggleAll = () => {
     if (allSelected) {
       setSelected(selected.filter((id) => !filtered.some((l) => l.id === id)));
