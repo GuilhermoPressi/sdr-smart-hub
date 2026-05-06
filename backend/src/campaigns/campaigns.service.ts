@@ -50,7 +50,13 @@ export class CampaignsService {
   }
 
   async create(dto: CreateCampaignDto): Promise<Campaign> {
-    if (!dto.message?.trim()) throw new BadRequestException('Mensagem obrigatória');
+    const isText = dto.messageType === 'text' || !dto.messageType;
+    if (isText && !dto.message?.trim()) {
+      throw new BadRequestException('Mensagem obrigatória para disparos de texto');
+    }
+    if (!isText && !dto.mediaUrl) {
+      throw new BadRequestException('Arquivo de mídia é obrigatório para este tipo de disparo');
+    }
     if (!dto.recipients || dto.recipients.length === 0) throw new BadRequestException('Nenhum destinatário');
 
     // Create campaign
