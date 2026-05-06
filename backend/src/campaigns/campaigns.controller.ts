@@ -49,8 +49,8 @@ export class CampaignsController {
   @UseInterceptors(FileInterceptor('file', {
     storage: diskStorage({
       destination: (req: any, file, cb) => {
-        const companyId = req.user.companyId;
-        const uploadPath = join(process.cwd(), 'uploads', 'campaigns', companyId);
+        const companyId = req.user?.companyId || 'default-company';
+        const uploadPath = join(process.cwd(), 'uploads', 'campaigns', String(companyId));
         if (!existsSync(uploadPath)) {
           mkdirSync(uploadPath, { recursive: true });
         }
@@ -84,7 +84,7 @@ export class CampaignsController {
     // Constrói a URL acessível
     const protocol = req.protocol;
     const host = req.get('host');
-    const companyId = req.user.companyId;
+    const companyId = req.user?.companyId || 'default-company';
     const mediaUrl = `${protocol}://${host}/uploads/campaigns/${companyId}/${file.filename}`;
 
     return {
