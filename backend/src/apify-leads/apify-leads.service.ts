@@ -114,6 +114,7 @@ export class ApifyLeadsService {
         state: lead.state || null,
         category: lead.category || null,
         source: 'google',
+        companyId: user?.companyId || 'default-company',
         userId,
         metadata: {
           phone_raw: lead.phone,

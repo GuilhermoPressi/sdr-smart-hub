@@ -281,25 +281,40 @@ export class ContactsService {
   }
 
   async deleteBulk(ids: string[], companyId: string) {
-    console.log(`[ContactsService] Iniciando deleteBulk: companyId=${companyId} | Qtd IDs=${ids.length}`);
+    console.log(`[ContactsService] DELETE_BULK | UserCompany: ${companyId} | IDs: ${ids.length}`);
+    console.log(`[ContactsService] IDs solicitados: ${ids.slice(0, 5).join(', ')}${ids.length > 5 ? '...' : ''}`);
     
-    // Contagem antes
+    // Contagem por empresa antes
     const beforeCount = await this.repo.count({ where: { companyId } });
     
-    const result = await this.repo.delete({
-      id: In(ids),
-      companyId: companyId,
+    // Busca os contatos antes para logar
+    const targets = await this.repo.find({
+      where: { id: In(ids) },
+      select: ['id', 'name', 'phone', 'companyId']
     });
     
-    // Contagem depois
+    console.log(`[ContactsService] Alvos encontrados no DB: ${targets.length}`);
+    targets.forEach(t => {
+      console.log(`  - ID: ${t.id} | Nome: ${t.name} | Phone: ${t.phone} | DB_Company: ${t.companyId}`);
+    });
+
+    // Exclusão robusta: tenta deletar pelo ID + companyId OU ID + NULL (retrocompatibilidade)
+    const result = await this.repo.createQueryBuilder()
+      .delete()
+      .where("id IN (:...ids)", { ids })
+      .andWhere("(company_id = :companyId OR company_id IS NULL)", { companyId })
+      .execute();
+    
+    // Contagem por empresa depois
     const afterCount = await this.repo.count({ where: { companyId } });
     
-    console.log(`[ContactsService] Delete concluído. Antes: ${beforeCount} | Depois: ${afterCount} | Afetados: ${result.affected}`);
+    console.log(`[ContactsService] Resultado: Afetados=${result.affected} | Antes=${beforeCount} | Depois=${afterCount}`);
     
     return { 
       deleted: result.affected || 0,
       before: beforeCount,
-      after: afterCount
+      after: afterCount,
+      found: targets.length
     };
   }
 }
