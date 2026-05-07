@@ -30,65 +30,107 @@ export class WebhookController {
 
   @Post()
   async handleWebhook(@Body() payload: any) {
+    // 1. Log Bruto para Auditoria
+    console.log('[WEBHOOK RAW]', JSON.stringify(payload).slice(0, 5000));
+
     const event = payload?.event;
+    const instanceName = payload?.instance;
 
     if (event === 'CONNECTION_UPDATE' || event === 'connection.update') {
-      this.logger.log(`Conexão atualizada: ${JSON.stringify(payload?.data?.state)}`);
+      this.logger.log(`[${instanceName}] Conexão atualizada: ${JSON.stringify(payload?.data?.state || payload?.state)}`);
       return { received: true };
     }
 
-    if (event !== 'MESSAGES_UPSERT' && event !== 'messages.upsert') {
-      return { received: true, ignored: true };
+    // Aceita múltiplos formatos de evento de mensagem
+    const isMessageEvent = [
+      'MESSAGES_UPSERT', 
+      'messages.upsert', 
+      'MESSAGES_UPDATE', 
+      'messages.update',
+      'SEND_MESSAGE',
+      'send.message'
+    ].includes(event);
+
+    if (!isMessageEvent) {
+      this.logger.debug(`[${instanceName}] Webhook ignorado: Evento "${event}" não é de mensagem.`);
+      return { received: true, ignored: true, reason: 'unsupported_event' };
     }
 
     const data = payload?.data || payload;
-    if (!data) return { received: true, ignored: true };
-
-    const key = data.key || data?.message?.key;
-    if (key?.fromMe) return { received: true, ignored: true };
-
-    const remoteJid = key?.remoteJid;
-    if (!remoteJid || remoteJid.includes('@g.us')) {
-      return { received: true, ignored: true };
+    if (!data) {
+      this.logger.warn(`[${instanceName}] Webhook descartado: Payload sem dados (data/payload vazio).`);
+      return { received: true, ignored: true, reason: 'no_data' };
     }
 
-    // Extract phone
+    // Suporte para mensagens em array (Evolution pode mandar assim em upsert)
+    const messageObj = Array.isArray(data.messages) ? data.messages[0] : (data.message || data);
+    const key = messageObj?.key || data?.key;
+
+    if (!key) {
+      this.logger.warn(`[${instanceName}] Webhook descartado: Não foi possível localizar "key" da mensagem.`);
+      return { received: true, ignored: true, reason: 'no_key' };
+    }
+
+    if (key.fromMe) {
+      this.logger.debug(`[${instanceName}] Webhook ignorado: Mensagem enviada por nós (fromMe: true).`);
+      return { received: true, ignored: true, reason: 'from_me' };
+    }
+
+    const remoteJid = key.remoteJid;
+    if (!remoteJid || remoteJid.includes('@g.us')) {
+      this.logger.debug(`[${instanceName}] Webhook ignorado: Mensagem de grupo ou sem JID (${remoteJid}).`);
+      return { received: true, ignored: true, reason: 'group_or_no_jid' };
+    }
+
+    // Extração de Telefone robusta
     let phone: string;
     if (remoteJid.includes('@lid')) {
-      const senderPn = key?.senderPn || data?.senderPn || '';
-      phone = senderPn.replace('@s.whatsapp.net', '');
+      const senderPn = key.senderPn || data.senderPn || messageObj.pushName || '';
+      phone = senderPn.replace('@s.whatsapp.net', '').replace(/\D/g, '');
     } else {
-      phone = remoteJid.replace('@s.whatsapp.net', '');
+      phone = remoteJid.replace('@s.whatsapp.net', '').replace(/\D/g, '');
     }
 
-    if (!phone || phone.includes('@')) {
-      return { received: true, ignored: true };
+    if (!phone) {
+      this.logger.warn(`[${instanceName}] Webhook descartado: Telefone não identificado.`);
+      return { received: true, ignored: true, reason: 'no_phone' };
     }
 
-    const msgBody = data.message || {};
-    const text = msgBody.conversation
-      || msgBody.extendedTextMessage?.text
-      || data.body
-      || '';
-    const waMessageId = key?.id;
-    const instanceName = payload?.instance;
+    // Extração de Texto Multi-formato
+    const msg = messageObj.message || messageObj;
+    const text = (
+      msg.conversation ||
+      msg.extendedTextMessage?.text ||
+      msg.imageMessage?.caption ||
+      msg.videoMessage?.caption ||
+      msg.buttonsResponseMessage?.selectedDisplayText ||
+      msg.listResponseMessage?.title ||
+      msg.templateButtonReplyMessage?.selectedDisplayText ||
+      data.body ||
+      ''
+    ).trim();
 
-    if (!text.trim()) return { received: true, ignored: true };
+    const waMessageId = key.id;
 
-    this.logger.log(`📩 Mensagem recebida | Instance: ${instanceName} | Phone: ${phone} | Text: "${text.substring(0, 40)}..."`);
+    if (!text) {
+      this.logger.debug(`[${instanceName}] Webhook ignorado: Mensagem sem conteúdo de texto extraível.`);
+      return { received: true, ignored: true, reason: 'no_text' };
+    }
+
+    this.logger.log(`📩 [${instanceName}] Mensagem de ${phone}: "${text.substring(0, 50)}..."`);
 
     // Busca a instância
     const instance = await this.instanceRepo.findOneBy({ instanceName });
     if (!instance) {
-      this.logger.error(`❌ Instância "${instanceName}" não encontrada no banco. Verifique se o nome da instância na Evolution bate com o banco.`);
+      this.logger.error(`❌ [${instanceName}] Instância não encontrada no banco. Mensagem de ${phone} descartada.`);
       return { received: true, ignored: true, reason: 'instance_not_found' };
     }
 
     const companyId = instance.companyId;
-    this.logger.log(`🏢 Empresa identificada: ${companyId}`);
 
-    // Dedup
+    // Deduplicação
     if (await this.messagesSvc.existsByWaId(waMessageId)) {
+      this.logger.debug(`[${instanceName}] Webhook ignorado: Mensagem duplicada (ID: ${waMessageId}).`);
       return { received: true, duplicate: true };
     }
 
@@ -101,11 +143,13 @@ export class WebhookController {
       ],
     });
 
+    const pushName = data.pushName || messageObj.pushName || phone;
+
     if (!contact) {
-      this.logger.log(`🆕 Criando novo contato para ${phone} na empresa ${companyId}`);
+      this.logger.log(`🆕 [${instanceName}] Criando novo contato para ${phone} (PushName: ${pushName})`);
       contact = this.contactRepo.create({
         phone: cleanPhone,
-        name: data.pushName || phone,
+        name: pushName,
         source: 'whatsapp',
         origin: 'WhatsApp Evolution',
         stage: 'novo',
@@ -113,15 +157,14 @@ export class WebhookController {
       });
       contact = await this.contactRepo.save(contact);
     } else {
-      this.logger.log(`👤 Contato encontrado: ${contact.name} (ID: ${contact.id})`);
-      // Atualiza apenas lastInteraction no CRM
+      this.logger.log(`👤 [${instanceName}] Contato encontrado: ${contact.name} (${phone})`);
       await this.contactRepo.update(contact.id, { lastInteraction: new Date() });
     }
 
     // Localiza ou cria a conversa para este canal/instância
     let conversation = await this.convSvc.findOrCreate(companyId, contact.id, instanceName);
     
-    // Save incoming message
+    // Salva mensagem recebida
     await this.messagesSvc.create({
       contactId: contact.id,
       conversationId: conversation.id,
@@ -138,48 +181,44 @@ export class WebhookController {
     });
     await this.convSvc.incrementUnread(conversation.id);
     
-    // Reload conversation to get fresh state
+    // Reload para estado atualizado
     conversation = await this.convSvc.update(conversation.id, {});
 
     // ── 2. Check blocked stages/statuses ─────────────────────────────────
     const blockedStages = ['atendimento_humano', 'ganho', 'perdido', 'finalizado'];
     if (blockedStages.includes(conversation.currentStage)) {
-      this.logger.log(`⏸️ Conversa em stage bloqueado: ${conversation.currentStage} (${contact.name})`);
-      return { received: true, iaSkipped: true };
+      this.logger.log(`⏸️ [${instanceName}] IA ignorada: Stage "${conversation.currentStage}" está bloqueado para ${contact.name}`);
+      return { received: true, iaSkipped: true, reason: 'blocked_stage' };
     }
 
     if (!conversation.aiEnabled) {
-      this.logger.log(`⏸️ IA desativada nesta conversa: ${contact.name}`);
-      return { received: true, iaSkipped: true };
+      this.logger.log(`⏸️ [${instanceName}] IA ignorada: IA desativada manualmente para ${contact.name}`);
+      return { received: true, iaSkipped: true, reason: 'ai_disabled' };
     }
 
     // ── 3. Get AI config ─────────────────────────────────────────────────
     const aiConfig = await this.aiConfigSvc.findActive(companyId);
     if (!aiConfig) {
-      this.logger.warn(`⚠️ Nenhuma IA ativa para a empresa ${companyId}.`);
+      this.logger.warn(`⚠️ [${instanceName}] IA ignorada: Nenhuma configuração ativa para empresa ${companyId}.`);
       return { received: true, noConfig: true };
     }
-    this.logger.log(`🤖 IA Ativa: ${aiConfig.displayName || aiConfig.internalName} (ID: ${aiConfig.id})`);
 
-    // ── 4. Check auto rules BEFORE calling OpenAI ────────────────────────
+    // ── 4. Check auto rules BEFORE scheduling ────────────────────────────
     if (aiConfig.autoRules) {
       const rules = aiConfig.autoRules;
-
-      // Transfer keywords check
-      if (rules.transferKeywords && rules.transferKeywords.length > 0) {
+      if (rules.transferKeywords?.length > 0) {
         const lowerText = text.toLowerCase();
         const matched = rules.transferKeywords.find(kw => lowerText.includes(kw.toLowerCase()));
         if (matched) {
-          this.logger.log(`🔀 Keyword de transferência detectada: "${matched}"`);
+          this.logger.log(`🔀 [${instanceName}] Keyword detectada: "${matched}". Transferindo ${contact.name}...`);
 
-          const handoffMsg = 'Perfeito, vou te encaminhar agora para um dos nossos especialistas. Ele já vai continuar o atendimento por aqui.';
+          const handoffMsg = 'Perfeito, vou te encaminhar agora para um dos nossos especialistas.';
           try {
             await this.evoSvc.sendText(instanceName, phone, handoffMsg);
           } catch (err) {
-            this.logger.error(`❌ Erro ao enviar mensagem de handoff: ${err.message}`);
+            this.logger.error(`❌ Erro ao enviar handoff: ${err.message}`);
           }
 
-          // Salva mensagem da IA vinculada à conversa
           await this.messagesSvc.create({
             contactId: contact.id,
             conversationId: conversation.id,
@@ -189,7 +228,6 @@ export class WebhookController {
             status: 'sent',
           });
 
-          // Handoff na Conversa
           await this.convSvc.update(conversation.id, {
             aiEnabled: false,
             currentStage: 'atendimento_humano',
@@ -198,36 +236,13 @@ export class WebhookController {
             handoffAt: new Date(),
           });
 
-          // Opcional: Atualiza o CRM (stage)
           await this.contactRepo.update(contact.id, { stage: 'atendimento_humano' });
-
-          this.logger.log(`👤 Conversa ${contact.name} movida para atendimento humano (keyword: "${matched}")`);
           return { received: true, transferred: true, keyword: matched };
         }
       }
     }
 
-    // ── 5. Check flow/stages ──────────────────────────────────────────────
-    const hasFlow = aiConfig.conversationFlow && aiConfig.conversationFlow.length > 0;
-    if (hasFlow) {
-      if (!conversation.currentStage) {
-        const firstStage = aiConfig.conversationFlow[0].id;
-        await this.convSvc.update(conversation.id, { currentStage: firstStage });
-        conversation.currentStage = firstStage;
-      }
-
-      const currentStep = aiConfig.conversationFlow.find(s => s.id === conversation.currentStage);
-      if (currentStep) {
-        const shouldAdvance = this.checkExitConditions(currentStep, text);
-        if (shouldAdvance && currentStep.nextStep) {
-          this.logger.log(`📍 Avançando etapa: ${currentStep.id} → ${currentStep.nextStep}`);
-          await this.convSvc.update(conversation.id, { currentStage: currentStep.nextStep });
-          conversation.currentStage = currentStep.nextStep;
-        }
-      }
-    }
-
-    // ── 6. Schedule AI Reply (Debounce) ─────────────────────────────────
+    // ── 5. Schedule AI Reply (Debounce) ─────────────────────────────────
     await this.aiReplySvc.scheduleReply(conversation.id, 15);
 
     return { received: true, scheduled: true };

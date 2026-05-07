@@ -53,8 +53,12 @@ export class EvolutionService {
             enabled: true,
             events: [
               'MESSAGES_UPSERT',
-              'CONNECTION_UPDATE',
               'MESSAGES_UPDATE',
+              'MESSAGES_DELETE',
+              'SEND_MESSAGE',
+              'CONNECTION_UPDATE',
+              'TYPEBOT_START',
+              'TYPEBOT_CHANGE_STATUS',
             ],
           }
         : undefined,
