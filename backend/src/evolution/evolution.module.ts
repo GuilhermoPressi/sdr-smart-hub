@@ -9,6 +9,7 @@ import { OpenaiModule } from '../openai/openai.module';
 import { AiConfigModule } from '../ai-config/ai-config.module';
 import { EvolutionInstance } from './entities/evolution-instance.entity';
 import { Contact } from '../contacts/entities/contact.entity';
+import { ConversationsModule } from '../conversations/conversations.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { Contact } from '../contacts/entities/contact.entity';
     forwardRef(() => MessagesModule),
     forwardRef(() => OpenaiModule),
     forwardRef(() => AiConfigModule),
+    forwardRef(() => ConversationsModule),
   ],
   providers: [EvolutionService],
   controllers: [EvolutionController, WebhookController],
