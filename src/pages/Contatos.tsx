@@ -22,9 +22,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ContactDetailsSheet } from "@/components/shared/ContactDetailsSheet";
 import { ImportContactsModal } from "@/components/shared/ImportContactsModal";
-import { NewContactModal } from "@/components/shared/NewContactModal";
+import { ContactModal } from "@/components/shared/ContactModal";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Edit2 } from "lucide-react";
 
 const stageOptions: { id: StageId; label: string }[] = [
   { id: "novo", label: "Novo Lead" },
@@ -68,7 +69,8 @@ export default function Contatos() {
   const [stage, setStage] = useState<StageId | "">("");
   const [loading, setLoading] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [isNewContactModalOpen, setIsNewContactModalOpen] = useState(false);
+  const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+  const [editingContact, setEditingContact] = useState<Lead | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   const filtered = useMemo(() => {
@@ -177,7 +179,10 @@ export default function Contatos() {
           </Button>
           <Button 
             className="bg-gradient-primary text-primary-foreground shrink-0"
-            onClick={() => setIsNewContactModalOpen(true)}
+            onClick={() => {
+              setEditingContact(null);
+              setIsContactModalOpen(true);
+            }}
           >
             <UserPlus className="h-4 w-4 mr-2" /> Novo contato
           </Button>
@@ -197,7 +202,7 @@ export default function Contatos() {
                         />
                       </div>
                     </th>
-                    <Th>Nome</Th><Th>Tags</Th><Th>Status</Th>
+                    <Th>Nome</Th><Th>Tags</Th><Th>Status</Th><Th className="w-10"></Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -225,6 +230,20 @@ export default function Contatos() {
                             : <div className="flex flex-wrap gap-1">{l.tags.map((t) => <StatusBadge key={t} variant="accent">{t}</StatusBadge>)}</div>}
                         </Td>
                         <Td><StatusBadge variant={statusVariant(l.status)} dot>{l.status}</StatusBadge></Td>
+                        <Td className="text-right">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-muted-foreground hover:text-primary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingContact(l);
+                              setIsContactModalOpen(true);
+                            }}
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </Td>
                       </tr>
                     );
                   })}
@@ -324,7 +343,14 @@ export default function Contatos() {
         }}
       />
 
-      <ContactDetailsSheet viewingContact={viewingContact} setViewingContact={setViewingContact} />
+      <ContactDetailsSheet 
+        viewingContact={viewingContact} 
+        setViewingContact={setViewingContact} 
+        onEdit={(l) => {
+          setEditingContact(l);
+          setIsContactModalOpen(true);
+        }}
+      />
       
       <ImportContactsModal 
         open={isImportModalOpen} 
@@ -332,10 +358,11 @@ export default function Contatos() {
         onComplete={fetchLeads}
       />
 
-      <NewContactModal
-        open={isNewContactModalOpen}
-        onOpenChange={setIsNewContactModalOpen}
+      <ContactModal
+        open={isContactModalOpen}
+        onOpenChange={setIsContactModalOpen}
         onSuccess={fetchLeads}
+        contact={editingContact}
       />
 
       <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>

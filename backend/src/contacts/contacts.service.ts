@@ -23,12 +23,19 @@ export class ContactsService {
   }
 
   create(data: Partial<Contact>) {
+    if (data.phone) {
+      data.phone = this.normalizePhone(data.phone);
+    }
     const contact = this.repo.create(data);
     return this.repo.save(contact);
   }
 
-  update(id: string, data: Partial<Contact>) {
-    return this.repo.update(id, data);
+  async update(id: string, data: Partial<Contact>) {
+    if (data.phone) {
+      data.phone = this.normalizePhone(data.phone);
+    }
+    await this.repo.update(id, data);
+    return this.findOne(id);
   }
 
   // Retorna apenas contatos com mensagens, incluindo prévia da última mensagem

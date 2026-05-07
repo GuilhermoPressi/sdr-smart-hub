@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,13 +7,14 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
-interface NewContactModalProps {
+interface ContactModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
+  contact?: any; // Se fornecido, entra em modo de edição
 }
 
-export function NewContactModal({ open, onOpenChange, onSuccess }: NewContactModalProps) {
+export function ContactModal({ open, onOpenChange, onSuccess, contact }: ContactModalProps) {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
@@ -22,6 +23,23 @@ export function NewContactModal({ open, onOpenChange, onSuccess }: NewContactMod
     companyName: "",
     jobTitle: "",
   });
+
+  const isEditing = !!contact;
+
+  useEffect(() => {
+    if (contact && open) {
+      setFormData({
+        name: contact.name || "",
+        phone: contact.phone || "",
+        email: contact.email || "",
+        companyName: contact.companyName || "",
+        jobTitle: contact.jobTitle || "",
+      });
+    } else if (!open) {
+      // Reset ao fechar
+      setFormData({ name: "", phone: "", email: "", companyName: "", jobTitle: "" });
+    }
+  }, [contact, open]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,13 +50,17 @@ export function NewContactModal({ open, onOpenChange, onSuccess }: NewContactMod
 
     setLoading(true);
     try {
-      await api.createContact(formData);
-      toast.success("Contato criado com sucesso!");
-      setFormData({ name: "", phone: "", email: "", companyName: "", jobTitle: "" });
+      if (isEditing) {
+        await api.updateContact(contact.id, formData);
+        toast.success("Contato atualizado com sucesso!");
+      } else {
+        await api.createContact(formData);
+        toast.success("Contato criado com sucesso!");
+      }
       onOpenChange(false);
       onSuccess();
     } catch (err: any) {
-      toast.error(err.message || "Erro ao criar contato");
+      toast.error(err.message || `Erro ao ${isEditing ? 'atualizar' : 'criar'} contato`);
     } finally {
       setLoading(false);
     }
@@ -48,7 +70,9 @@ export function NewContactModal({ open, onOpenChange, onSuccess }: NewContactMod
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-background border-border-subtle sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle className="font-display text-xl">Novo Contato</DialogTitle>
+          <DialogTitle className="font-display text-xl">
+            {isEditing ? "Editar Contato" : "Novo Contato"}
+          </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-4">
@@ -72,6 +96,9 @@ export function NewContactModal({ open, onOpenChange, onSuccess }: NewContactMod
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
               required
             />
+            <p className="text-[10px] text-muted-foreground">
+              Se omitido, o DDI 55 (Brasil) será adicionado automaticamente.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -111,7 +138,7 @@ export function NewContactModal({ open, onOpenChange, onSuccess }: NewContactMod
               Cancelar
             </Button>
             <Button type="submit" className="bg-gradient-primary text-primary-foreground shadow-glow" disabled={loading}>
-              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Salvar Contato"}
+              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : isEditing ? "Salvar Alterações" : "Criar Contato"}
             </Button>
           </DialogFooter>
         </form>

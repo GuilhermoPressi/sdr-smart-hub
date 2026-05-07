@@ -4,13 +4,16 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Phone, Mail, MessageCircle, ExternalLink, MapPin } from "lucide-react";
 import { useApp, Lead, STAGES } from "@/store/app";
 import { useNavigate } from "react-router-dom";
+import { Edit2 } from "lucide-react";
 
 export function ContactDetailsSheet({ 
   viewingContact, 
-  setViewingContact 
+  setViewingContact,
+  onEdit
 }: { 
   viewingContact: Lead | null; 
   setViewingContact: (lead: Lead | null) => void;
+  onEdit?: (lead: Lead) => void;
 }) {
   const navigate = useNavigate();
   const { setActiveChatLead } = useApp();
@@ -47,6 +50,18 @@ export function ContactDetailsSheet({
               >
                 <MessageCircle className="h-4 w-4 mr-2" />
                 Abrir Conversa
+              </Button>
+              <Button 
+                variant="outline"
+                className="mt-2 w-full border-border-subtle"
+                onClick={() => {
+                  if (viewingContact && onEdit) {
+                    onEdit(viewingContact);
+                  }
+                }}
+              >
+                <Edit2 className="h-4 w-4 mr-2" />
+                Editar Contato
               </Button>
             </SheetHeader>
 
