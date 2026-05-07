@@ -191,6 +191,8 @@ export class ContactsService {
     const stats = {
       total: records.length,
       imported: 0,
+      updated: 0,
+      recovered: 0,
       duplicates: 0,
       invalid: 0,
     };
@@ -216,17 +218,7 @@ export class ContactsService {
     });
 
     const existingMap = new Map(existingContacts.map(c => [c.phone, c]));
-    const stats = {
-      total: records.length,
-      imported: 0,
-      updated: 0,
-      recovered: 0,
-      duplicates: 0,
-      invalid: 0,
-    };
-
     const toSave: Contact[] = [];
-    const startTime = Date.now();
 
     for (const record of records) {
       const phone = this.normalizePhone(record[phoneField]);
