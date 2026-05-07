@@ -57,22 +57,33 @@ export class WebhookController {
     }
 
     const data = payload?.data || payload;
+
+    // ── 0. Filtro Silencioso para Status Updates ────────────────────────
+    if (event === 'MESSAGES_UPDATE' || event === 'messages.update') {
+      // Ignora atualizações de status (delivered, read, etc) sem logar warning
+      return { received: true, ignored: true, reason: 'status_update' };
+    }
+
+    if (!isMessageEvent) {
+      this.logger.debug(`[${instanceName}] Webhook ignorado: Evento "${event}" não é de mensagem.`);
+      return { received: true, ignored: true, reason: 'unsupported_event' };
+    }
+
     if (!data) {
-      this.logger.warn(`[${instanceName}] Webhook descartado: Payload sem dados (data/payload vazio).`);
+      this.logger.warn(`[${instanceName}] Webhook descartado: Payload sem dados.`);
       return { received: true, ignored: true, reason: 'no_data' };
     }
 
-    // Suporte para mensagens em array (Evolution pode mandar assim em upsert)
     const messageObj = Array.isArray(data.messages) ? data.messages[0] : (data.message || data);
     const key = messageObj?.key || data?.key;
 
     if (!key) {
-      this.logger.warn(`[${instanceName}] Webhook descartado: Não foi possível localizar "key" da mensagem.`);
+      this.logger.debug(`[${instanceName}] Webhook ignorado: Sem chave de mensagem (pode ser evento de sistema).`);
       return { received: true, ignored: true, reason: 'no_key' };
     }
 
     if (key.fromMe) {
-      this.logger.debug(`[${instanceName}] Webhook ignorado: Mensagem enviada por nós (fromMe: true).`);
+      this.logger.debug(`[${instanceName}] Webhook ignorado: Mensagem enviada por nós.`);
       return { received: true, ignored: true, reason: 'from_me' };
     }
 
@@ -245,6 +256,7 @@ export class WebhookController {
     // ── 5. Schedule AI Reply (Debounce) ─────────────────────────────────
     await this.aiReplySvc.scheduleReply(conversation.id, 15);
 
+    this.logger.log(`✅ [${instanceName}] Mensagem de ${phone} salva e resposta IA agendada. Webhook finalizado.`);
     return { received: true, scheduled: true };
   }
 

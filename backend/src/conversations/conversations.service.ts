@@ -54,10 +54,10 @@ export class ConversationsService {
     await this.repo.increment({ id }, 'unreadCount', 1);
   }
 
-  async findPendingReplies() {
+  async findPendingReplies(now: Date = new Date()) {
     return this.repo.createQueryBuilder('c')
       .where('c.next_ai_reply_at IS NOT NULL')
-      .andWhere('c.next_ai_reply_at <= CURRENT_TIMESTAMP')
+      .andWhere('c.next_ai_reply_at <= :now', { now })
       .andWhere('c.ai_enabled = true')
       .andWhere('c.waiting_human_reply = false')
       .getMany();
