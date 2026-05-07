@@ -87,6 +87,9 @@ export class CampaignsController {
     const companyId = req.user?.companyId || 'default-company';
     const mediaUrl = `${protocol}://${host}/uploads/campaigns/${companyId}/${file.filename}`;
 
+    console.log(`[CampaignsController] Arquivo salvo em: ${file.path}`);
+    console.log(`[CampaignsController] URL pública gerada: ${mediaUrl}`);
+
     return {
       mediaUrl,
       fileName: file.originalname,

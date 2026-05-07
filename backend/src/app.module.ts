@@ -43,8 +43,9 @@ import { EvolutionInstance } from './evolution/entities/evolution-instance.entit
     ContactsModule,
     CampaignsModule,
     ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..', 'uploads'),
+      rootPath: join(process.cwd(), 'uploads'),
       serveRoot: '/uploads',
+      renderPath: '/_not_used_', // Evita procurar index.html se não encontrar o arquivo
     }),
   ],
 })

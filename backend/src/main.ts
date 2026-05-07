@@ -8,6 +8,14 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api/v1');
 
+  // Garantir diretório de uploads
+  const fs = require('fs');
+  const path = require('path');
+  const uploadDir = path.join(process.cwd(), 'uploads');
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+
   app.useGlobalFilters(new AllExceptionsFilter());
 
   app.useGlobalPipes(
