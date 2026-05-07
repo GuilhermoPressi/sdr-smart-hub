@@ -62,6 +62,11 @@ export class ContactsController {
     return this.contactsService.importContacts(file.buffer, mapping, config);
   }
 
+  @Patch('bulk')
+  async updateBulk(@Req() req, @Body() body: { contactIds: string[], patch: any }) {
+    return this.contactsService.updateBulk(body.contactIds, body.patch, req.user.companyId);
+  }
+
   @Delete('bulk')
   async deleteBulk(@Req() req, @Body() body: { contactIds: string[] }) {
     return this.contactsService.deleteBulk(body.contactIds, req.user.companyId);

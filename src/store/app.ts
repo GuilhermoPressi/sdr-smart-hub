@@ -244,14 +244,18 @@ export const useApp = create<Store>()(
       api.updateContact(id, patch).catch(console.error);
     });
   },
-  bulkUpdate: (ids, patch) =>
+  bulkUpdate: (ids, patch) => {
     set((s) => ({
       leads: s.leads.map((l) =>
         ids.includes(l.id)
           ? { ...l, ...patch, tags: patch.tags ? Array.from(new Set([...l.tags, ...patch.tags])) : l.tags }
           : l,
       ),
-    })),
+    }));
+    import("@/lib/api").then(({ api }) => {
+      api.bulkUpdateContacts(ids, patch).catch(console.error);
+    });
+  },
   bulkDeleteLeads: async (ids) => {
     const { api } = await import("@/lib/api");
     await api.deleteBulkContacts(ids);

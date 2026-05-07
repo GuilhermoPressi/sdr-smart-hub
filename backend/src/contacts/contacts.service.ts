@@ -298,6 +298,26 @@ export class ContactsService {
     return digits;
   }
 
+  async updateBulk(ids: string[], patch: Partial<Contact>, companyId: string) {
+    const contacts = await this.repo.find({
+      where: { id: In(ids), companyId }
+    });
+
+    for (const contact of contacts) {
+      if (patch.tags) {
+        const currentTags = contact.tags || [];
+        const newTags = Array.from(new Set([...currentTags, ...patch.tags]));
+        contact.tags = newTags;
+      }
+      if (patch.stage) contact.stage = patch.stage;
+      if (patch.status) contact.status = patch.status;
+      if (patch.crm) contact.crm = patch.crm;
+    }
+
+    await this.repo.save(contacts);
+    return { affected: contacts.length };
+  }
+
   async deleteBulk(ids: string[], companyId: string) {
     console.log(`[ContactsService] DELETE_BULK | UserCompany: ${companyId} | IDs: ${ids.length}`);
     console.log(`[ContactsService] IDs solicitados: ${ids.slice(0, 5).join(', ')}${ids.length > 5 ? '...' : ''}`);

@@ -126,6 +126,8 @@ export const api = {
   },
   deleteBulkContacts: (ids: string[]) => 
     request<any>('/contacts/bulk', { method: 'DELETE', body: JSON.stringify({ contactIds: ids }) }),
+  bulkUpdateContacts: (ids: string[], patch: any) =>
+    request<any>('/contacts/bulk', { method: 'PATCH', body: JSON.stringify({ contactIds: ids, patch }) }),
 
   // Messages
   getMessages: (contactId: string, limit = 50) =>
