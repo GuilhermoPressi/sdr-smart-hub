@@ -40,6 +40,7 @@ export class ContactsService {
 
   // Retorna apenas contatos com mensagens, incluindo prévia da última mensagem
   async findConversations(companyId: string): Promise<any[]> {
+    console.log(`[ContactsService] findConversations solicitado para companyId: ${companyId}`);
     const result = await this.repo.query(`
       SELECT
         c.id,
