@@ -131,24 +131,6 @@ export function ImportContactsModal({ open, onOpenChange, onComplete }: ImportCo
     setIsUploading(true);
     setStep(4);
     try {
-      // Detecção manual de delimitador para maior precisão
-      const firstLine = buffer.toString().split('\n')[0];
-      const counts = {
-        ',': (firstLine.match(/,/g) || []).length,
-        ';': (firstLine.match(/;/g) || []).length,
-        '\t': (firstLine.match(/\t/g) || []).length,
-      };
-      let delimiter = ',';
-      if (counts[';'] > counts[','] && counts[';'] > counts['\t']) delimiter = ';';
-      else if (counts['\t'] > counts[','] && counts['\t'] > counts[';']) delimiter = '\t';
-
-      const records = parse(buffer, {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true,
-        delimiter,
-      });
-
       const res = await api.importContacts(file, mapping, {
         tag,
         stage,
