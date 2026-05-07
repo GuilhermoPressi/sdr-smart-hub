@@ -32,16 +32,6 @@ export class ContactsController {
     });
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.contactsService.findOne(id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() data: any) {
-    return this.contactsService.update(id, data);
-  }
-
   @Post('import')
   @UseInterceptors(FileInterceptor('file'))
   async importContacts(
@@ -71,4 +61,16 @@ export class ContactsController {
   async deleteBulk(@Req() req, @Body() body: { contactIds: string[] }) {
     return this.contactsService.deleteBulk(body.contactIds, req.user.companyId);
   }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.contactsService.findOne(id);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() data: any) {
+    return this.contactsService.update(id, data);
+  }
+
+
 }
