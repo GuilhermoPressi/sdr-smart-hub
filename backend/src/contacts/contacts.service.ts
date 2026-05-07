@@ -12,8 +12,9 @@ export class ContactsService {
   ) {}
 
   findAll(companyId: string) {
+    const finalCompanyId = companyId || 'default-company';
     return this.repo.find({ 
-      where: { companyId },
+      where: { companyId: finalCompanyId },
       order: { updatedAt: 'DESC' } 
     });
   }
@@ -25,6 +26,9 @@ export class ContactsService {
   create(data: Partial<Contact>) {
     if (data.phone) {
       data.phone = this.normalizePhone(data.phone);
+    }
+    if (!data.companyId) {
+      data.companyId = 'default-company';
     }
     const contact = this.repo.create(data);
     return this.repo.save(contact);
@@ -40,7 +44,8 @@ export class ContactsService {
 
   // Retorna apenas contatos com mensagens, incluindo prévia da última mensagem
   async findConversations(companyId: string): Promise<any[]> {
-    console.log(`[ContactsService] findConversations solicitado para companyId: ${companyId}`);
+    const finalCompanyId = companyId || 'default-company';
+    console.log(`[ContactsService] findConversations solicitado para companyId: ${finalCompanyId}`);
     
     const result = await this.repo.query(`
       SELECT
@@ -65,7 +70,7 @@ export class ContactsService {
       WHERE c.company_id = $1 
       AND EXISTS (SELECT 1 FROM messages WHERE contact_id = c.id)
       ORDER BY (SELECT created_at FROM messages WHERE contact_id = c.id ORDER BY created_at DESC LIMIT 1) DESC NULLS LAST
-    `, [companyId]);
+    `, [finalCompanyId]);
 
     return result.map((r: any) => ({
       ...r,
@@ -74,6 +79,7 @@ export class ContactsService {
   }
 
   async getDashboardMetrics(companyId: string) {
+    const finalCompanyId = companyId || 'default-company';
     const startTime = Date.now();
 
     const [metrics] = await this.repo.query(`
@@ -90,7 +96,7 @@ export class ContactsService {
         (SELECT COUNT(DISTINCT contact_id) FROM messages m JOIN contacts c2 ON m.contact_id = c2.id WHERE c2.company_id = $1 AND m.sender = 'lead' AND LENGTH(trim(m.text)) >= 3) AS "totalResponded"
       FROM contacts
       WHERE company_id = $1
-    `, [companyId]);
+    `, [finalCompanyId]);
 
     const totalContacts = parseInt(metrics.totalContacts || '0', 10);
     const leadsToday = parseInt(metrics.leadsToday || '0', 10);
@@ -313,11 +319,12 @@ export class ContactsService {
   }
 
   async deleteBulk(ids: string[], companyId: string) {
-    console.log(`[ContactsService] DELETE_BULK | UserCompany: ${companyId} | IDs: ${ids.length}`);
+    const finalCompanyId = companyId || 'default-company';
+    console.log(`[ContactsService] DELETE_BULK | UserCompany: ${finalCompanyId} | IDs: ${ids.length}`);
     console.log(`[ContactsService] IDs solicitados: ${ids.slice(0, 5).join(', ')}${ids.length > 5 ? '...' : ''}`);
     
     // Contagem por empresa antes
-    const beforeCount = await this.repo.count({ where: { companyId } });
+    const beforeCount = await this.repo.count({ where: { companyId: finalCompanyId } });
     
     // Busca os contatos antes para logar
     const targets = await this.repo.find({
@@ -329,16 +336,16 @@ export class ContactsService {
     targets.forEach(t => {
       console.log(`  - ID: ${t.id} | Nome: ${t.name} | Phone: ${t.phone} | DB_Company: ${t.companyId}`);
     });
-
+ 
     // Exclusão robusta: tenta deletar pelo ID + companyId OU ID + NULL (retrocompatibilidade)
     const result = await this.repo.createQueryBuilder()
       .delete()
       .where("id IN (:...ids)", { ids })
-      .andWhere("(company_id = :companyId OR company_id IS NULL)", { companyId })
+      .andWhere("(company_id = :companyId OR company_id IS NULL)", { companyId: finalCompanyId })
       .execute();
     
     // Contagem por empresa depois
-    const afterCount = await this.repo.count({ where: { companyId } });
+    const afterCount = await this.repo.count({ where: { companyId: finalCompanyId } });
     
     console.log(`[ContactsService] Resultado: Afetados=${result.affected} | Antes=${beforeCount} | Depois=${afterCount}`);
     
