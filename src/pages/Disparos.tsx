@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Send, Plus, Eye, Pause, Play, Upload, Users, Tag, ListPlus, Loader2, CheckCircle2, XCircle, Clock, ArrowLeft, Zap, Image as ImageIcon, Video, FileAudio, FileText, Type } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +46,30 @@ export default function Disparos() {
   const [mediaData, setMediaData] = useState<{ url: string; fileName: string; mimeType: string } | null>(null);
   const [caption, setCaption] = useState("");
   const [uploading, setUploading] = useState(false);
+
+  const messageRef = useRef<HTMLTextAreaElement>(null);
+  const captionRef = useRef<HTMLTextAreaElement>(null);
+
+  const insertVariable = (ref: React.RefObject<HTMLTextAreaElement>, setter: (v: string | ((v: string) => string)) => void, variable: string) => {
+    const el = ref.current;
+    if (!el) {
+      setter(prev => prev + variable);
+      return;
+    }
+
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const text = el.value;
+    const before = text.substring(0, start);
+    const after = text.substring(end);
+
+    setter(before + variable + after);
+
+    setTimeout(() => {
+      el.focus();
+      el.setSelectionRange(start + variable.length, start + variable.length);
+    }, 10);
+  };
 
   useEffect(() => { loadCampaigns(); }, []);
 
@@ -421,12 +445,17 @@ export default function Disparos() {
 
           {messageType === "text" ? (
             <div className="space-y-2">
-              <Label className="text-xs">Texto da mensagem</Label>
-              <Textarea value={message} onChange={e => setMessage(e.target.value)} rows={5} placeholder={"Fala {nome}, tudo bem?\n\nVi que você atua com {segmento} em {cidade}..."} />
+              <Textarea 
+                ref={messageRef}
+                value={message} 
+                onChange={e => setMessage(e.target.value)} 
+                rows={5} 
+                placeholder={"Fala {nome}, tudo bem?\n\nVi que você atua com {segmento} em {cidade}..."} 
+              />
               <div className="flex flex-wrap gap-1.5">
                 <span className="text-[10px] text-muted-foreground mr-1">Variáveis:</span>
                 {["{nome}", "{empresa}", "{cidade}", "{segmento}"].map(v => (
-                  <button key={v} type="button" onClick={() => setMessage(m => m + v)}
+                  <button key={v} type="button" onClick={() => insertVariable(messageRef, setMessage, v)}
                     className="px-2 py-0.5 rounded-md bg-primary/10 border border-primary/20 text-[10px] font-mono text-primary hover:bg-primary/20">{v}</button>
                 ))}
               </div>
@@ -480,11 +509,17 @@ export default function Disparos() {
               {messageType !== "audio" && (
                 <div className="space-y-2">
                   <Label className="text-xs">Legenda (opcional)</Label>
-                  <Input value={caption} onChange={e => setCaption(e.target.value)} placeholder="Escreva uma legenda..." />
+                  <Textarea 
+                    ref={captionRef}
+                    value={caption} 
+                    onChange={e => setCaption(e.target.value)} 
+                    rows={3}
+                    placeholder="Escreva uma legenda..." 
+                  />
                   <div className="flex flex-wrap gap-1.5">
                     <span className="text-[10px] text-muted-foreground mr-1">Variáveis:</span>
                     {["{nome}", "{empresa}", "{cidade}", "{segmento}"].map(v => (
-                      <button key={v} type="button" onClick={() => setCaption(c => c + v)}
+                      <button key={v} type="button" onClick={() => insertVariable(captionRef, setCaption, v)}
                         className="px-2 py-0.5 rounded-md bg-primary/10 border border-primary/20 text-[10px] font-mono text-primary hover:bg-primary/20">{v}</button>
                     ))}
                   </div>
