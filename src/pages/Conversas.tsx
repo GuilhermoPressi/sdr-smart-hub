@@ -136,7 +136,7 @@ export default function Conversas() {
     try {
       await api.sendText(activeConv.instanceName, activeConv.contact?.phone || "", text);
       await new Promise(r => setTimeout(r, 800));
-      if (activeConv.contactId) loadMessages(activeConv.contactId);
+      loadMessages(activeConv.id);
       fetchConversations();
     } catch {
       toast.error("Falha ao enviar mensagem");
@@ -217,7 +217,7 @@ export default function Conversas() {
               <button key={conv.id} onClick={() => handleSelectConversation(conv.id)}
                 className={cn(
                   "w-full text-left p-4 border-b border-border-subtle transition-colors hover:bg-surface-elevated flex gap-3 items-start",
-                  activeId === conv.id && "bg-primary/5 hover:bg-primary/5",
+                  activeConversationId === conv.id && "bg-primary/5 hover:bg-primary/5",
                   conv.waitingHumanReply && "bg-amber-500/5 border-l-2 border-l-amber-500",
                 )}>
                 {/* Avatar */}
@@ -276,7 +276,7 @@ export default function Conversas() {
           <div className="p-4 border-b border-border-subtle bg-surface/50 flex justify-between items-center shrink-0">
             <div className="flex items-center gap-3 min-w-0">
               <button className="md:hidden p-2 -ml-2 rounded-lg text-muted-foreground hover:bg-surface-elevated"
-                onClick={() => setActiveId(null)}>
+                onClick={() => setActiveConversation(null)}>
                 <ArrowLeft className="h-5 w-5" />
               </button>
               <div className="h-9 w-9 rounded-full bg-surface-elevated grid place-items-center border border-border-subtle shrink-0">
