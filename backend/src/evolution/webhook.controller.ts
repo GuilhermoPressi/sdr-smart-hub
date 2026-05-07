@@ -225,76 +225,17 @@ export class WebhookController {
       }
     }
 
-    // ── 6. Call OpenAI ───────────────────────────────────────────────────
-    // Prepara um "Virtual Contact" para a OpenAI não quebrar (mantendo campos esperados)
-    const virtualContact = { 
-      ...contact, 
-      conversationStage: conversation.currentStage,
-      iaStatus: conversation.aiEnabled ? 'Ativa' : 'Pausada'
-    } as any;
+    // ── 6. Schedule AI Reply (Debounce) ─────────────────────────────────
+    // Em vez de responder agora, agendamos para daqui a 15 segundos.
+    // Se o lead mandar outra mensagem, o tempo é "empurrado" (debounce).
+    const replyDelaySeconds = 15;
+    const nextReplyAt = new Date(Date.now() + replyDelaySeconds * 1000);
+    
+    await this.convSvc.update(conversation.id, { nextAiReplyAt: nextReplyAt });
 
-    const history = await this.messagesSvc.findByContact(contact.id, 20); // TODO: migrar findByContact para findByConversation
-    let aiPayload: AIResponsePayload | null;
+    this.logger.log(`🕒 Resposta da IA agendada para ${contact.name} em ${replyDelaySeconds}s`);
 
-    try {
-      aiPayload = await this.openaiSvc.generateResponse(aiConfig, virtualContact, history);
-    } catch (err) {
-      this.logger.error(`❌ Erro OpenAI: ${err.message}`);
-      return { received: true, error: 'openai_failed' };
-    }
-
-    if (!aiPayload || !aiPayload.reply) {
-      this.logger.warn('⚠️ Resposta vazia da IA.');
-      return { received: true, emptyResponse: true };
-    }
-
-    const aiResponse = aiPayload.reply;
-
-    // ── 7. Process suggested stage change ───────────────────────────────
-    if (hasFlow && aiPayload.suggestedNextStage) {
-      const suggested = aiPayload.suggestedNextStage;
-      const validStep = aiConfig.conversationFlow.find(s => s.id === suggested);
-      if (validStep && suggested !== conversation.currentStage) {
-        this.logger.log(`🤖 IA sugeriu etapa: ${suggested} — aplicando`);
-        await this.convSvc.update(conversation.id, { currentStage: suggested });
-        conversation.currentStage = suggested;
-      }
-    }
-
-    // ── 8. Send & Save response ─────────────────────────────────────────
-    try {
-      await this.evoSvc.sendText(instanceName, phone, aiResponse);
-      
-      await this.messagesSvc.create({
-        contactId: contact.id,
-        conversationId: conversation.id,
-        text: aiResponse,
-        sender: 'ia',
-        instanceName,
-        status: 'sent',
-      });
-
-      this.logger.log(`🤖 IA respondeu ${contact.name} [stage: ${conversation.currentStage || '-'}]: "${aiResponse.substring(0, 40)}..."`);
-    } catch (err) {
-      this.logger.error(`❌ Erro ao enviar/salvar resposta da IA: ${err.message}`);
-    }
-
-    // ── 9. Handle handoff after reply ──────────────────────────────────
-    const isHandoff = conversation.currentStage === 'handoff' || conversation.currentStage === 'atendimento_humano';
-    if (isHandoff) {
-      await this.convSvc.update(conversation.id, {
-        aiEnabled: false,
-        currentStage: 'atendimento_humano',
-        waitingHumanReply: true,
-        handoffReason: 'IA sugeriu handoff',
-        handoffAt: new Date(),
-      });
-      await this.contactRepo.update(contact.id, { stage: 'atendimento_humano' });
-      this.logger.log(`🔀 Handoff aplicado pela IA para ${contact.name}`);
-      return { received: true, responded: true, stage: 'handoff', handoff: true };
-    }
-
-    return { received: true, responded: true, stage: conversation.currentStage };
+    return { received: true, scheduled: true, nextReplyAt };
   }
 
   // ── Exit Conditions Checker (Simpler) ───────────────────────────────

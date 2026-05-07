@@ -56,6 +56,9 @@ export class Conversation {
   @Column({ name: 'handoff_at', nullable: true })
   handoffAt: Date;
 
+  @Column({ name: 'next_ai_reply_at', nullable: true })
+  nextAiReplyAt: Date;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
