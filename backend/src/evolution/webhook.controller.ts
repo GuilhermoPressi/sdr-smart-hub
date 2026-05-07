@@ -9,6 +9,7 @@ import { AiConfig, ConversationStep } from '../ai-config/entities/ai-config.enti
 import { EvolutionInstance } from './entities/evolution-instance.entity';
 import { EvolutionService } from './evolution.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { AiReplyService } from '../conversations/ai-reply.service';
 
 @Controller('webhooks/evolution')
 export class WebhookController {
@@ -24,6 +25,7 @@ export class WebhookController {
     @InjectRepository(EvolutionInstance)
     private readonly instanceRepo: Repository<EvolutionInstance>,
     private readonly convSvc: ConversationsService,
+    private readonly aiReplySvc: AiReplyService,
   ) {}
 
   @Post()
@@ -226,16 +228,9 @@ export class WebhookController {
     }
 
     // ── 6. Schedule AI Reply (Debounce) ─────────────────────────────────
-    // Em vez de responder agora, agendamos para daqui a 15 segundos.
-    // Se o lead mandar outra mensagem, o tempo é "empurrado" (debounce).
-    const replyDelaySeconds = 15;
-    const nextReplyAt = new Date(Date.now() + replyDelaySeconds * 1000);
-    
-    await this.convSvc.update(conversation.id, { nextAiReplyAt: nextReplyAt });
+    await this.aiReplySvc.scheduleReply(conversation.id, 15);
 
-    this.logger.log(`🕒 Resposta da IA agendada para ${contact.name} em ${replyDelaySeconds}s`);
-
-    return { received: true, scheduled: true, nextReplyAt };
+    return { received: true, scheduled: true };
   }
 
   // ── Exit Conditions Checker (Simpler) ───────────────────────────────

@@ -43,7 +43,7 @@ export class AiReplyService implements OnModuleInit {
         return;
       }
 
-      this.logger.log(`🤖 Processando ${pending.length} respostas agendadas...`);
+      this.logger.log(`🤖 Processando ${pending.length} respostas IA agendadas...`);
 
       for (const conv of pending) {
         await this.handleAiReply(conv);
@@ -55,8 +55,25 @@ export class AiReplyService implements OnModuleInit {
     }
   }
 
+  async scheduleReply(conversationId: string, delaySeconds = 15) {
+    const executeAt = new Date(Date.now() + delaySeconds * 1000);
+    
+    // Busca a conversa para logar se é a primeira ou reagendamento
+    const conv = await this.convRepo.findOneBy({ id: conversationId });
+    if (!conv) return;
+
+    if (!conv.nextAiReplyAt) {
+      this.logger.log(`🕒 Primeira mensagem recebida, agendando resposta IA para Conv=${conversationId} em ${delaySeconds}s`);
+    } else {
+      this.logger.log(`🕒 Resposta IA reagendada para Conv=${conversationId} (debounce de ${delaySeconds}s)`);
+    }
+
+    await this.convRepo.update(conversationId, { nextAiReplyAt: executeAt });
+  }
+
   private async handleAiReply(conv: Conversation) {
     try {
+      this.logger.log(`🤖 Processando resposta IA agendada para Conv=${conv.id}...`);
       // 1. Limpar o agendamento imediatamente para evitar duplicidade
       await this.convRepo.update(conv.id, { nextAiReplyAt: null });
 
