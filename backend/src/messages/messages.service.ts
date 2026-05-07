@@ -11,19 +11,21 @@ export class MessagesService {
   ) {}
 
   async findByContact(contactId: string, limit = 50): Promise<Message[]> {
-    return this.repo.find({
+    const msgs = await this.repo.find({
       where: { contactId },
-      order: { createdAt: 'ASC' },
+      order: { createdAt: 'DESC' },
       take: limit,
     });
+    return msgs.reverse();
   }
 
   async findByConversation(conversationId: string, limit = 50): Promise<Message[]> {
-    return this.repo.find({
+    const msgs = await this.repo.find({
       where: { conversationId },
-      order: { createdAt: 'ASC' },
+      order: { createdAt: 'DESC' },
       take: limit,
     });
+    return msgs.reverse();
   }
 
   async markAsRead(contactId: string): Promise<void> {

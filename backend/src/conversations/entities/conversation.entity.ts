@@ -59,6 +59,9 @@ export class Conversation {
   @Column({ name: 'next_ai_reply_at', nullable: true })
   nextAiReplyAt: Date;
 
+  @Column({ name: 'next_ai_reply_status', default: 'none' }) // 'none', 'pending', 'processing'
+  nextAiReplyStatus: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

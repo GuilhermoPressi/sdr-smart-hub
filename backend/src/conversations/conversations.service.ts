@@ -58,6 +58,7 @@ export class ConversationsService {
     return this.repo.createQueryBuilder('c')
       .where('c.next_ai_reply_at IS NOT NULL')
       .andWhere('c.next_ai_reply_at <= :now', { now })
+      .andWhere('c.next_ai_reply_status = :status', { status: 'pending' })
       .andWhere('c.ai_enabled = true')
       .andWhere('c.waiting_human_reply = false')
       .getMany();

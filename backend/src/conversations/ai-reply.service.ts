@@ -27,9 +27,9 @@ export class AiReplyService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    // Polling a cada 5 segundos
-    setInterval(() => this.processPendingReplies(), 5000);
-    this.logger.log('🚀 Serviço de Resposta Adiada (Debounce) iniciado.');
+    this.logger.log('🚀 AiReply worker iniciado');
+    // Polling a cada 2 segundos para maior responsividade
+    setInterval(() => this.processPendingReplies(), 2000);
   }
 
   async processPendingReplies() {
@@ -37,16 +37,26 @@ export class AiReplyService implements OnModuleInit {
     this.isProcessing = true;
 
     try {
-      const pending = await this.convSvc.findPendingReplies();
-      if (pending.length === 0) {
-        this.isProcessing = false;
-        return;
+      const now = new Date();
+      const pending = await this.convSvc.findPendingReplies(now);
+      
+      if (pending.length > 0) {
+        this.logger.log(`🤖 Pendências encontradas: ${pending.length}`);
       }
 
-      this.logger.log(`🤖 Processando ${pending.length} respostas IA agendadas...`);
-
       for (const conv of pending) {
+        // 1. Marcar como processando imediatamente para evitar que outro worker pegue
+        await this.convRepo.update(conv.id, { nextAiReplyStatus: 'processing' });
+        
+        this.logger.log(`⏳ Processando pending reply Conv=${conv.id}`);
         await this.handleAiReply(conv);
+        
+        // 2. Marcar como finalizado
+        await this.convRepo.update(conv.id, { 
+          nextAiReplyAt: null, 
+          nextAiReplyStatus: 'none' 
+        });
+        this.logger.log(`✅ Pending reply concluído para Conv=${conv.id}`);
       }
     } catch (err) {
       this.logger.error(`❌ Erro no loop de respostas: ${err.message}`);
@@ -58,30 +68,31 @@ export class AiReplyService implements OnModuleInit {
   async scheduleReply(conversationId: string, delaySeconds = 15) {
     const executeAt = new Date(Date.now() + delaySeconds * 1000);
     
-    // Busca a conversa para logar se é a primeira ou reagendamento
     const conv = await this.convRepo.findOneBy({ id: conversationId });
     if (!conv) return;
 
     if (!conv.nextAiReplyAt) {
       this.logger.log(`🕒 Primeira mensagem recebida, agendando resposta IA para Conv=${conversationId} em ${delaySeconds}s`);
     } else {
-      this.logger.log(`🕒 Resposta IA reagendada para Conv=${conversationId} (debounce de ${delaySeconds}s)`);
+      this.logger.log(`🕒 Resposta IA reagendada para Conv=${conversationId} (debounce)`);
     }
 
-    await this.convRepo.update(conversationId, { nextAiReplyAt: executeAt });
+    await this.convRepo.update(conversationId, { 
+      nextAiReplyAt: executeAt,
+      nextAiReplyStatus: 'pending' 
+    });
   }
 
   private async handleAiReply(conv: Conversation) {
     try {
-      this.logger.log(`🤖 Processando resposta IA agendada para Conv=${conv.id}...`);
-      // 1. Limpar o agendamento imediatamente para evitar duplicidade
-      await this.convRepo.update(conv.id, { nextAiReplyAt: null });
-
       const contact = await this.contactRepo.findOneBy({ id: conv.contactId });
       if (!contact) return;
 
       const aiConfig = await this.aiConfigSvc.findActive(conv.companyId);
-      if (!aiConfig) return;
+      if (!aiConfig) {
+        this.logger.warn(`⚠️ IA ignorada: Nenhuma configuração ativa para empresa ${conv.companyId}`);
+        return;
+      }
 
       // 2. Chamar OpenAI
       const virtualContact = { 
@@ -90,8 +101,19 @@ export class AiReplyService implements OnModuleInit {
         iaStatus: conv.aiEnabled ? 'Ativa' : 'Pausada'
       } as any;
 
-      const history = await this.messagesSvc.findByContact(contact.id, 20);
+      // Busca histórico real (as últimas 20 mensagens em ordem cronológica correta)
+      const history = await this.messagesSvc.findByConversation(conv.id, 20);
       
+      // Adiciona instrução de continuidade se houver histórico
+      if (history.length > 1) {
+        const continuityInstruction = "\nIMPORTANTE: A conversa já está em andamento. NÃO cumprimente o lead novamente nem diga 'Olá'. Responda diretamente ao que ele disse por último no histórico.";
+        if (aiConfig.instructions) {
+          aiConfig.instructions += continuityInstruction;
+        } else {
+          aiConfig.instructions = continuityInstruction;
+        }
+      }
+
       const aiPayload = await this.openaiSvc.generateResponse(aiConfig, virtualContact, history);
       if (!aiPayload || !aiPayload.reply) return;
 
