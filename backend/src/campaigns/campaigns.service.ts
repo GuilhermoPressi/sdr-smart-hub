@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Campaign } from './entities/campaign.entity';
 import { CampaignRecipient } from './entities/campaign-recipient.entity';
 import { EvolutionService } from '../evolution/evolution.service';
+import { EvolutionInstance } from '../evolution/entities/evolution-instance.entity';
 
 interface CreateCampaignDto {
   name?: string;
@@ -31,11 +32,16 @@ export class CampaignsService {
     private readonly campaignRepo: Repository<Campaign>,
     @InjectRepository(CampaignRecipient)
     private readonly recipientRepo: Repository<CampaignRecipient>,
+    @InjectRepository(EvolutionInstance)
+    private readonly instanceRepo: Repository<EvolutionInstance>,
     private readonly evoSvc: EvolutionService,
   ) {}
 
-  async findAll(): Promise<Campaign[]> {
-    return this.campaignRepo.find({ order: { createdAt: 'DESC' } });
+  async findAll(companyId: string): Promise<Campaign[]> {
+    return this.campaignRepo.find({ 
+      where: { companyId },
+      order: { createdAt: 'DESC' } 
+    });
   }
 
   async findById(id: string): Promise<Campaign | null> {
@@ -49,7 +55,7 @@ export class CampaignsService {
     });
   }
 
-  async create(dto: CreateCampaignDto): Promise<Campaign> {
+  async create(dto: CreateCampaignDto, user: any): Promise<Campaign> {
     const isText = dto.messageType === 'text' || !dto.messageType;
     if (isText && !dto.message?.trim()) {
       throw new BadRequestException('Mensagem obrigatória para disparos de texto');
@@ -59,12 +65,30 @@ export class CampaignsService {
     }
     if (!dto.recipients || dto.recipients.length === 0) throw new BadRequestException('Nenhum destinatário');
 
+    const companyId = user?.companyId || 'default-company';
+    const userId = user?.sub || user?.id;
+
+    // Tentar selecionar uma instância automática se não informada
+    let instanceName = dto.instanceName;
+    if (!instanceName) {
+      const instance = await this.instanceRepo.findOne({
+        where: { companyId, status: 'connected' },
+        order: { updatedAt: 'DESC' }
+      });
+      
+      if (!instance) {
+        throw new BadRequestException('Nenhuma instância do WhatsApp conectada encontrada para sua empresa.');
+      }
+      instanceName = instance.instanceName;
+      this.logger.log(`🤖 Instância selecionada automaticamente: ${instanceName} (Empresa: ${companyId})`);
+    }
+
     // Create campaign
     const campaign = this.campaignRepo.create({
       name: dto.name || `Disparo ${new Date().toLocaleDateString('pt-BR')}`,
       message: dto.message,
       messageType: dto.messageType || 'text',
-      instanceName: dto.instanceName,
+      instanceName,
       sourceType: dto.sourceType,
       sourceId: dto.sourceId,
       mediaUrl: dto.mediaUrl,
@@ -76,6 +100,8 @@ export class CampaignsService {
       simulateHuman: dto.simulateHuman !== false,
       total: dto.recipients.length,
       status: 'pending',
+      companyId,
+      userId,
     });
     const saved = await this.campaignRepo.save(campaign);
     this.logger.log(`📋 Campanha criada: "${saved.name}" (${saved.total} destinatários)`);

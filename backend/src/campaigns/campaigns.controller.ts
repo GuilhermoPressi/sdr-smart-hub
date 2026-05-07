@@ -16,8 +16,8 @@ export class CampaignsController {
   constructor(private readonly svc: CampaignsService) {}
 
   @Get()
-  findAll() {
-    return this.svc.findAll();
+  findAll(@Req() req) {
+    return this.svc.findAll(req.user.companyId);
   }
 
   @Get(':id')
@@ -31,8 +31,8 @@ export class CampaignsController {
   }
 
   @Post()
-  create(@Body() body: any) {
-    return this.svc.create(body);
+  create(@Req() req, @Body() body: any) {
+    return this.svc.create(body, req.user);
   }
 
   @Patch(':id/start')
