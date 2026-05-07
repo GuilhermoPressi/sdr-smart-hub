@@ -28,7 +28,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message = exception.message || message;
     }
 
-    this.logger.error(`[${status}] ${message}`, exception instanceof Error ? exception.stack : '');
+    if (status === HttpStatus.NOT_FOUND) {
+      this.logger.warn(`[404] ${message}`);
+    } else {
+      this.logger.error(`[${status}] ${message}`, exception instanceof Error ? exception.stack : '');
+    }
 
     response.status(status).json({
       statusCode: status,
