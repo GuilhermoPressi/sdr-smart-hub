@@ -41,6 +41,7 @@ export class ContactsService {
   // Retorna apenas contatos com mensagens, incluindo prévia da última mensagem
   async findConversations(companyId: string): Promise<any[]> {
     console.log(`[ContactsService] findConversations solicitado para companyId: ${companyId}`);
+    
     const result = await this.repo.query(`
       SELECT
         c.id,
@@ -56,22 +57,14 @@ export class ContactsService {
         c.handoff_reason AS "handoffReason",
         c.handoff_at AS "handoffAt",
         c.updated_at AS "updatedAt",
-        m.text AS "lastMessageText",
-        m.sender AS "lastMessageSender",
-        m.created_at AS "lastMessageAt",
-        COUNT(m2.id) FILTER (WHERE m2.status != 'read' AND m2.sender = 'lead') AS "unreadCount"
+        (SELECT text FROM messages WHERE contact_id = c.id ORDER BY created_at DESC LIMIT 1) AS "lastMessageText",
+        (SELECT sender FROM messages WHERE contact_id = c.id ORDER BY created_at DESC LIMIT 1) AS "lastMessageSender",
+        (SELECT created_at FROM messages WHERE contact_id = c.id ORDER BY created_at DESC LIMIT 1) AS "lastMessageAt",
+        (SELECT COUNT(*) FROM messages WHERE contact_id = c.id AND status != 'read' AND sender = 'lead') AS "unreadCount"
       FROM contacts c
-      INNER JOIN LATERAL (
-        SELECT text, sender, created_at
-        FROM messages
-        WHERE contact_id = c.id
-        ORDER BY created_at DESC
-        LIMIT 1
-      ) m ON true
-      LEFT JOIN messages m2 ON m2.contact_id = c.id
-      WHERE c.company_id = $1
-      GROUP BY c.id, m.text, m.sender, m.created_at
-      ORDER BY m.created_at DESC
+      WHERE c.company_id = $1 
+      AND EXISTS (SELECT 1 FROM messages WHERE contact_id = c.id)
+      ORDER BY (SELECT created_at FROM messages WHERE contact_id = c.id ORDER BY created_at DESC LIMIT 1) DESC NULLS LAST
     `, [companyId]);
 
     return result.map((r: any) => ({
