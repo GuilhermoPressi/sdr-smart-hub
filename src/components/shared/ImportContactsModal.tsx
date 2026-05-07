@@ -72,7 +72,15 @@ export function ImportContactsModal({ open, onOpenChange, onComplete }: ImportCo
       const lines = text.split(/\r?\n/).filter(l => l.trim());
       if (lines.length < 1) return;
 
-      const sep = lines[0].includes(';') ? ';' : lines[0].includes('\t') ? '\t' : ',';
+      const firstLine = lines[0];
+      const counts = {
+        ',': (firstLine.match(/,/g) || []).length,
+        ';': (firstLine.match(/;/g) || []).length,
+        '\t': (firstLine.match(/\t/g) || []).length,
+      };
+      let sep = ',';
+      if (counts[';'] > counts[','] && counts[';'] > counts['\t']) sep = ';';
+      else if (counts['\t'] > counts[','] && counts['\t'] > counts[';']) sep = '\t';
       
       const parseCSVLine = (line: string): string[] => {
         const result: string[] = [];
@@ -95,17 +103,14 @@ export function ImportContactsModal({ open, onOpenChange, onComplete }: ImportCo
       setHeaders(csvHeaders);
       setPreviewRows(rows.slice(1));
 
-      // Auto-mapping
+      // Auto-mapping (apenas se houver correspondência exata ou muito próxima)
       const newMapping: Record<string, string> = {};
       csvHeaders.forEach(h => {
-        const lower = h.toLowerCase();
-        if (lower.includes('nome')) newMapping['name'] = h;
-        else if (lower.includes('fone') || lower.includes('tel') || lower.includes('celular') || lower.includes('whatsapp')) newMapping['phone'] = h;
-        else if (lower.includes('email') || lower.includes('e-mail')) newMapping['email'] = h;
-        else if (lower.includes('empresa') || lower.includes('company')) newMapping['companyName'] = h;
-        else if (lower.includes('cargo') || lower.includes('job')) newMapping['jobTitle'] = h;
-        else if (lower.includes('cidade')) newMapping['city'] = h;
-        else if (lower.includes('estado')) newMapping['state'] = h;
+        const lower = h.toLowerCase().trim();
+        if (lower === 'nome' || lower === 'name') newMapping['name'] = h;
+        else if (['telefone', 'phone', 'whatsapp', 'celular', 'fone', 'tel'].includes(lower)) newMapping['phone'] = h;
+        else if (lower === 'email' || lower === 'e-mail') newMapping['email'] = h;
+        else if (['empresa', 'company', 'organization'].includes(lower)) newMapping['companyName'] = h;
       });
       setMapping(newMapping);
       setStep(2);
@@ -126,6 +131,24 @@ export function ImportContactsModal({ open, onOpenChange, onComplete }: ImportCo
     setIsUploading(true);
     setStep(4);
     try {
+      // Detecção manual de delimitador para maior precisão
+      const firstLine = buffer.toString().split('\n')[0];
+      const counts = {
+        ',': (firstLine.match(/,/g) || []).length,
+        ';': (firstLine.match(/;/g) || []).length,
+        '\t': (firstLine.match(/\t/g) || []).length,
+      };
+      let delimiter = ',';
+      if (counts[';'] > counts[','] && counts[';'] > counts['\t']) delimiter = ';';
+      else if (counts['\t'] > counts[','] && counts['\t'] > counts[';']) delimiter = '\t';
+
+      const records = parse(buffer, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        delimiter,
+      });
+
       const res = await api.importContacts(file, mapping, {
         tag,
         stage,
