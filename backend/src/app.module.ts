@@ -19,6 +19,8 @@ import { CampaignRecipient } from './campaigns/entities/campaign-recipient.entit
 import { UsersModule } from './users/users.module';
 import { User } from './users/entities/user.entity';
 import { EvolutionInstance } from './evolution/entities/evolution-instance.entity';
+import { ConversationsModule } from './conversations/conversations.module';
+import { Conversation } from './conversations/entities/conversation.entity';
 
 @Module({
   imports: [
@@ -29,7 +31,7 @@ import { EvolutionInstance } from './evolution/entities/evolution-instance.entit
       username: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASS || 'postgres',
       database: process.env.DB_NAME || 'sdr_smart_hub',
-      entities: [Contact, ApifyLeadSearch, Message, AiConfig, Campaign, CampaignRecipient, User, EvolutionInstance],
+      entities: [Contact, ApifyLeadSearch, Message, AiConfig, Campaign, CampaignRecipient, User, EvolutionInstance, Conversation],
       synchronize: true,
       ssl: false,
     }),
@@ -42,6 +44,7 @@ import { EvolutionInstance } from './evolution/entities/evolution-instance.entit
     OpenaiModule,
     ContactsModule,
     CampaignsModule,
+    ConversationsModule,
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: '/uploads',

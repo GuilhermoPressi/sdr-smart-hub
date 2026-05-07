@@ -107,9 +107,11 @@ export const api = {
 
   // Contacts
   getContacts: () => request<any[]>('/contacts'),
-  getConversations: () => request<any[]>('/contacts/conversations'),
+  getConversations: () => request<any[]>('/conversations'),
   getDashboardMetrics: () => request<any>('/contacts/dashboard/metrics', { cache: 'no-store' }),
-  markAsRead: (contactId: string) => request<any>(`/messages/contact/${contactId}/read`, { method: 'POST' }),
+  updateConversation: (id: string, data: any) =>
+    request<any>(`/conversations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  markAsRead: (id: string) => request<any>(`/conversations/${id}/read`, { method: 'PATCH' }),
   getContact: (id: string) => request<any>(`/contacts/${id}`),
   createContact: (data: any) =>
     request<any>('/contacts', { method: 'POST', body: JSON.stringify(data) }),
@@ -132,6 +134,8 @@ export const api = {
   // Messages
   getMessages: (contactId: string, limit = 50) =>
     request<any[]>(`/messages/contact/${contactId}?limit=${limit}`),
+  getConversationMessages: (convId: string, limit = 50) =>
+    request<any[]>(`/messages/conversation/${convId}?limit=${limit}`),
 
   // Evolution / WhatsApp
   sendText: (instanceName: string | undefined, phone: string, text: string) =>

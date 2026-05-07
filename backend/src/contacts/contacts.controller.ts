@@ -8,27 +8,32 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 export class ContactsController {
   constructor(private readonly contactsService: ContactsService) {}
 
+  private getCompanyId(req: any): string {
+    return req.user.companyId || 'default-company';
+  }
+
   @Get()
   findAll(@Req() req) {
-    return this.contactsService.findAll(req.user.companyId);
+    return this.contactsService.findAll(this.getCompanyId(req));
   }
 
   @Get('dashboard/metrics')
   getDashboardMetrics(@Req() req) {
-    console.log('[ContactsController] Dashboard solicitado para companyId:', req.user.companyId);
-    return this.contactsService.getDashboardMetrics(req.user.companyId);
+    const companyId = this.getCompanyId(req);
+    console.log('[ContactsController] Dashboard solicitado para companyId:', companyId);
+    return this.contactsService.getDashboardMetrics(companyId);
   }
 
   @Get('conversations')
   findConversations(@Req() req) {
-    return this.contactsService.findConversations(req.user.companyId);
+    return this.contactsService.findConversations(this.getCompanyId(req));
   }
 
   @Post()
   create(@Req() req, @Body() data: any) {
     return this.contactsService.create({
       ...data,
-      companyId: req.user.companyId,
+      companyId: this.getCompanyId(req),
     });
   }
 
@@ -41,7 +46,7 @@ export class ContactsController {
   ) {
     const mapping = JSON.parse(body.mapping || '{}');
     const config = {
-      companyId: req.user.companyId,
+      companyId: this.getCompanyId(req),
       tag: body.tag,
       stage: body.stage,
       ignoreDuplicates: body.ignoreDuplicates === 'true',
@@ -54,12 +59,12 @@ export class ContactsController {
 
   @Patch('bulk')
   async updateBulk(@Req() req, @Body() body: { contactIds: string[], patch: any }) {
-    return this.contactsService.updateBulk(body.contactIds, body.patch, req.user.companyId);
+    return this.contactsService.updateBulk(body.contactIds, body.patch, this.getCompanyId(req));
   }
 
   @Delete('bulk')
   async deleteBulk(@Req() req, @Body() body: { contactIds: string[] }) {
-    return this.contactsService.deleteBulk(body.contactIds, req.user.companyId);
+    return this.contactsService.deleteBulk(body.contactIds, this.getCompanyId(req));
   }
 
   @Get(':id')
@@ -71,6 +76,4 @@ export class ContactsController {
   update(@Param('id') id: string, @Body() data: any) {
     return this.contactsService.update(id, data);
   }
-
-
 }

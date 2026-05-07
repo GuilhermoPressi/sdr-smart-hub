@@ -30,7 +30,7 @@ export class User {
   @Column({ default: true })
   active: boolean;
 
-  @Column({ nullable: true })
+  @Column({ name: 'company_id', nullable: true })
   companyId: string;
 
   @CreateDateColumn()

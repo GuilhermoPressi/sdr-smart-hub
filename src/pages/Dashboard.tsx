@@ -76,8 +76,8 @@ export default function Dashboard() {
 
   // Funnel setup
   const funnelStages = [
-    { id: "abordagem", label: "Abordagem", value: metrics?.totalContacts || 0, color: "from-blue-600/80 to-blue-600" },
-    { id: "responderam", label: "Responderam", value: metrics?.totalResponded || 0, color: "from-purple-600/80 to-purple-600" },
+    { id: "abordagem", label: "Leads na Base", value: metrics?.totalContacts || 0, color: "from-blue-600/80 to-blue-600" },
+    { id: "responderam", label: "Conversas Ativas", value: metrics?.totalConversations || 0, color: "from-purple-600/80 to-purple-600" },
     { id: "atend_ia", label: "Atend. IA", value: metrics?.totalAiActive || 0, color: "from-amber-500/80 to-amber-500" },
     { id: "qualificados", label: "Qualificados", value: metrics?.totalQualified || 0, color: "from-emerald-500/80 to-emerald-500" },
     { id: "atend_humano", label: "Atend. Humano", value: metrics?.totalHuman || 0, color: "from-pink-500/80 to-pink-500" },

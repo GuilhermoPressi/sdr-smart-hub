@@ -350,14 +350,22 @@ export function ImportContactsModal({ open, onOpenChange, onComplete }: ImportCo
                     <p className="text-sm text-muted-foreground">O processo foi finalizado com sucesso.</p>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div className="bg-surface rounded-2xl p-4 border border-border-subtle">
                       <p className="text-2xl font-bold text-primary">{results.imported}</p>
-                      <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Importados</p>
+                      <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Novos</p>
+                    </div>
+                    <div className="bg-surface rounded-2xl p-4 border border-border-subtle">
+                      <p className="text-2xl font-bold text-success">{results.updated || 0}</p>
+                      <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Atualizados</p>
+                    </div>
+                    <div className="bg-surface rounded-2xl p-4 border border-border-subtle">
+                      <p className="text-2xl font-bold text-accent">{results.recovered || 0}</p>
+                      <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Recuperados</p>
                     </div>
                     <div className="bg-surface rounded-2xl p-4 border border-border-subtle">
                       <p className="text-2xl font-bold text-warning">{results.duplicates}</p>
-                      <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Duplicados</p>
+                      <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Ignorados</p>
                     </div>
                     <div className="bg-surface rounded-2xl p-4 border border-border-subtle">
                       <p className="text-2xl font-bold text-destructive">{results.invalid}</p>

@@ -46,6 +46,18 @@ export interface Lead {
   lastInteraction: string;
 }
 
+export interface Conversation {
+  id: string;
+  contactId: string;
+  contact?: Lead;
+  aiEnabled: boolean;
+  currentStage: string;
+  lastMessageAt: string;
+  unreadCount: number;
+  waitingHumanReply: boolean;
+  status: string;
+}
+
 // ── New types for 4-tab AI config ───────────────────────────────────────
 
 export interface ConversationStep {
@@ -158,6 +170,12 @@ interface Store {
   fetchMessages: (leadId: string) => Promise<void>;
   activeChatLeadId: string | null;
   setActiveChatLead: (id: string | null) => void;
+
+  conversations: Conversation[];
+  fetchConversations: () => Promise<void>;
+  updateConversationStore: (id: string, patch: Partial<Conversation>) => Promise<void>;
+  activeConversationId: string | null;
+  setActiveConversation: (id: string | null) => void;
 
   user: { id: string; email: string; name?: string; role: 'admin' | 'manager' | 'attendant' } | null;
   token: string | null;
@@ -320,6 +338,40 @@ export const useApp = create<Store>()(
   },
   activeChatLeadId: null,
   setActiveChatLead: (id) => set({ activeChatLeadId: id }),
+
+  conversations: [],
+  fetchConversations: async () => {
+    const { api } = await import("@/lib/api");
+    try {
+      const convs = await api.getConversations();
+      set({ 
+        conversations: (convs || []).map((c: any) => ({
+          ...c,
+          contact: c.contact ? {
+            ...c.contact,
+            name: c.contact.name || c.contact.phone || 'Desconhecido',
+          } : undefined
+        })) 
+      });
+    } catch (e) {
+      console.error("Failed to fetch conversations", e);
+    }
+  },
+  updateConversationStore: async (id, patch) => {
+    set((s) => ({
+      conversations: s.conversations.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+    }));
+    const { api } = await import("@/lib/api");
+    await api.updateConversation(id, patch).catch(console.error);
+  },
+  activeConversationId: null,
+  setActiveConversation: (id) => {
+    const conv = useApp.getState().conversations.find(c => c.id === id);
+    set({ 
+      activeConversationId: id,
+      activeChatLeadId: conv ? conv.contactId : null 
+    });
+  },
 
   user: null,
   token: null,

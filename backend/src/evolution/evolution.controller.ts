@@ -9,6 +9,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
 import { EvolutionInstance } from './entities/evolution-instance.entity';
+import { ConversationsService } from '../conversations/conversations.service';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('evolution')
@@ -22,6 +23,7 @@ export class EvolutionController {
     private readonly contactRepo: Repository<Contact>,
     @InjectRepository(EvolutionInstance)
     private readonly instanceRepo: Repository<EvolutionInstance>,
+    private readonly convSvc: ConversationsService,
   ) {}
 
   @Post('instances')
@@ -111,23 +113,29 @@ export class EvolutionController {
     });
 
     if (contact) {
+      // Localiza ou cria a conversa
+      const conversation = await this.convSvc.findOrCreate(companyId, contact.id, targetInstanceName);
+
       await this.messagesSvc.create({
         contactId: contact.id,
+        conversationId: conversation.id,
         text,
         sender: 'human',
         instanceName: targetInstanceName,
         status: 'sent',
       });
 
-      // Atualiza lastInteraction + limpa alerta de handoff se existir
-      const updates: any = { lastInteraction: new Date() };
-      if (contact.waitingHumanReply) {
-        updates.waitingHumanReply = false;
-        this.logger.log(`✅ Atendente respondeu para ${contact.name} — alerta de handoff removido`);
-      }
-      await this.contactRepo.update(contact.id, updates);
+      // Atualiza metadados da conversa
+      await this.convSvc.update(conversation.id, {
+        lastMessageAt: new Date(),
+        waitingHumanReply: false,
+        unreadCount: 0,
+      });
 
-      this.logger.log(`Mensagem humana salva → contato ${contact.name} (${phone})`);
+      // Atualiza lastInteraction no CRM
+      await this.contactRepo.update(contact.id, { lastInteraction: new Date() });
+
+      this.logger.log(`Mensagem humana salva → contato ${contact.name} (${phone}) na conversa ${conversation.id}`);
     } else {
       this.logger.warn(`Contato não encontrado para phone ${phone} — mensagem enviada mas não salva no histórico`);
     }

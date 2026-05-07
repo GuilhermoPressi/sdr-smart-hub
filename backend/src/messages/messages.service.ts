@@ -18,6 +18,14 @@ export class MessagesService {
     });
   }
 
+  async findByConversation(conversationId: string, limit = 50): Promise<Message[]> {
+    return this.repo.find({
+      where: { conversationId },
+      order: { createdAt: 'ASC' },
+      take: limit,
+    });
+  }
+
   async markAsRead(contactId: string): Promise<void> {
     await this.repo.update(
       { contactId, sender: 'lead', status: 'sent' } as any,

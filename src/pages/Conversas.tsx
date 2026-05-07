@@ -11,15 +11,10 @@ import {
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { toast } from "sonner";
 
-/** Verifica se a IA deve responder esta conversa (lógica inline, sem dependência externa) */
-function shouldAiRespond(conv: { iaStatus?: string; stage?: string }): boolean {
+/** Verifica se a IA deve responder esta conversa */
+function shouldAiRespond(conv: any): boolean {
   if (!conv) return false;
-  const blockedStages = ["atendimento_humano", "ganho", "perdido"];
-  if (conv.iaStatus === "Pausado") return false;
-  if (conv.iaStatus === "Vendedor assumiu") return false;
-  if (conv.iaStatus === "Negócio fechado") return false;
-  if (conv.stage && blockedStages.includes(conv.stage)) return false;
-  return true;
+  return conv.aiEnabled && !conv.waitingHumanReply;
 }
 
 interface Conversation {
@@ -60,10 +55,16 @@ function formatFullTime(iso: string): string {
 }
 
 export default function Conversas() {
-  const { updateLead, agents } = useApp();
+  const { 
+    conversations, 
+    fetchConversations, 
+    activeConversationId, 
+    setActiveConversation, 
+    updateConversationStore,
+    agents 
+  } = useApp();
+  
   const activeAiName = agents[0]?.displayName || agents[0]?.internalName || "IA";
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [search, setSearch] = useState("");
   const [inputValue, setInputValue] = useState("");
@@ -71,41 +72,32 @@ export default function Conversas() {
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const activeConv = conversations.find((c) => c.id === activeId) || null;
+  const activeConv = conversations.find((c) => c.id === activeConversationId) || null;
 
   // ── Poll conversas a cada 5s ────────────────────────────────────────────
   useEffect(() => {
-    loadConversations();
-    const interval = setInterval(loadConversations, 5000);
+    fetchConversations();
+    const interval = setInterval(fetchConversations, 5000);
     return () => clearInterval(interval);
   }, []);
 
   // ── Poll mensagens do chat ativo a cada 5s ──────────────────────────────
   useEffect(() => {
-    if (!activeId) return;
-    loadMessages(activeId);
-    const interval = setInterval(() => loadMessages(activeId), 5000);
+    if (!activeConv?.id) return;
+    loadMessages(activeConv.id);
+    const interval = setInterval(() => loadMessages(activeConv.id), 5000);
     return () => clearInterval(interval);
-  }, [activeId]);
+  }, [activeConv?.id]);
 
   // ── Scroll para última mensagem ─────────────────────────────────────────
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  async function loadConversations() {
-    try {
-      const data = await api.getConversations();
-      setConversations(data || []);
-    } catch (e) {
-      // silencioso — retry no próximo poll
-    }
-  }
-
-  async function loadMessages(contactId: string) {
+  async function loadMessages(convId: string) {
     setLoadingMsgs(true);
     try {
-      const data = await api.getMessages(contactId);
+      const data = await api.getConversationMessages(convId);
       setMessages(data || []);
     } catch {
       // silencioso
@@ -115,14 +107,12 @@ export default function Conversas() {
   }
 
   async function handleSelectConversation(id: string) {
-    setActiveId(id);
+    setActiveConversation(id);
     setMessages([]);
     // Marca como lida
     try {
       await api.markAsRead(id);
-      setConversations((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c))
-      );
+      fetchConversations(); // recarrega para zerar unreadCount
     } catch {}
   }
 
@@ -133,7 +123,7 @@ export default function Conversas() {
     setInputValue("");
     setIsSending(true);
 
-    // Otimista — adiciona local
+    // Otimista
     const tempMsg: Message = {
       id: `temp-${Date.now()}`,
       text,
@@ -144,13 +134,12 @@ export default function Conversas() {
     setMessages((prev) => [...prev, tempMsg]);
 
     try {
-      await api.sendText(undefined, activeConv.phone, text);
-      // Aguarda 800ms para o backend salvar antes de recarregar
+      await api.sendText(activeConv.instanceName, activeConv.contact?.phone || "", text);
       await new Promise(r => setTimeout(r, 800));
-      await loadMessages(activeConv.id);
+      if (activeConv.contactId) loadMessages(activeConv.contactId);
+      fetchConversations();
     } catch {
       toast.error("Falha ao enviar mensagem");
-      // Remove a mensagem otimista em caso de erro
       setMessages(prev => prev.filter(m => !m.id.startsWith("temp-")));
     } finally {
       setIsSending(false);
@@ -160,39 +149,24 @@ export default function Conversas() {
   async function handleToggleIA() {
     if (!activeConv) return;
 
-    // Determine if IA is currently stopped (any blocked state)
-    const isStopped = activeConv.iaStatus === "Pausado"
-      || activeConv.iaStatus === "Vendedor assumiu"
-      || activeConv.stage === "atendimento_humano";
-
     try {
-      if (isStopped) {
-        // RESUMING IA: reset everything back to IA active
-        const updates: Record<string, any> = {
-          iaStatus: "Em qualificação",
-          stage: "atendimento_ia",
+      if (!activeConv.aiEnabled) {
+        // RETOMANDO IA
+        const updates = {
+          aiEnabled: true,
+          currentStage: "atendimento_ia",
           waitingHumanReply: false,
           handoffReason: null,
           handoffAt: null,
         };
-        await api.updateContact(activeConv.id, updates);
-        setConversations((prev) =>
-          prev.map((c) => (c.id === activeConv.id
-            ? { ...c, ...updates, waitingHumanReply: false, handoffReason: undefined, handoffAt: undefined }
-            : c))
-        );
-        toast.success("IA retomada! Novas mensagens serão respondidas automaticamente.");
+        await updateConversationStore(activeConv.id, updates);
+        toast.success("IA retomada nesta conversa!");
       } else {
-        // PAUSING IA
-        const updates: Record<string, any> = {
-          iaStatus: "Pausado",
-        };
-        await api.updateContact(activeConv.id, updates);
-        setConversations((prev) =>
-          prev.map((c) => (c.id === activeConv.id ? { ...c, ...updates } : c))
-        );
+        // PAUSANDO IA
+        await updateConversationStore(activeConv.id, { aiEnabled: false });
         toast.success("IA pausada para este contato.");
       }
+      fetchConversations();
     } catch {
       toast.error("Erro ao alterar IA");
     }
@@ -201,13 +175,12 @@ export default function Conversas() {
   const filtered = conversations
     .filter((c) => {
       const q = search.toLowerCase();
-      return (c.name || "").toLowerCase().includes(q) || (c.phone || "").includes(q);
+      const contact = c.contact;
+      return (contact?.name || "").toLowerCase().includes(q) || (contact?.phone || "").includes(q);
     })
     .sort((a, b) => {
-      // Aguardando atendente sempre no topo
       if (a.waitingHumanReply && !b.waitingHumanReply) return -1;
       if (!a.waitingHumanReply && b.waitingHumanReply) return 1;
-      // Depois por data
       return new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime();
     });
 
@@ -256,7 +229,7 @@ export default function Conversas() {
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-center mb-0.5">
                     <p className={cn("text-sm truncate pr-1", conv.unreadCount > 0 ? "font-bold text-foreground" : "font-medium text-foreground/80")}>
-                      {conv.name || conv.phone}
+                      {conv.contact?.name || conv.contact?.phone || "Desconhecido"}
                     </p>
                     <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">
                       {formatTime(conv.lastMessageAt)}
@@ -310,8 +283,8 @@ export default function Conversas() {
                 <User className="h-4 w-4 text-foreground/70" />
               </div>
               <div className="min-w-0">
-                <p className="font-semibold text-sm truncate">{activeConv.name || activeConv.phone}</p>
-                <p className="text-xs text-muted-foreground">{activeConv.phone}</p>
+                <p className="font-semibold text-sm truncate">{activeConv.contact?.name || activeConv.contact?.phone}</p>
+                <p className="text-xs text-muted-foreground">{activeConv.contact?.phone}</p>
               </div>
             </div>
 
@@ -329,15 +302,15 @@ export default function Conversas() {
                   <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
                   {activeAiName} ativa
                 </div>
-              ) : !activeConv.waitingHumanReply && activeConv.iaStatus === "Pausado" ? (
+              ) : !activeConv.waitingHumanReply && !activeConv.aiEnabled ? (
                 <StatusBadge variant="warning" dot className="text-[10px] hidden sm:flex">IA pausada</StatusBadge>
               ) : null}
-              <Button variant={activeConv.iaStatus === "Pausado" || activeConv.iaStatus === "Vendedor assumiu" ? "default" : "outline"}
+              <Button variant={!activeConv.aiEnabled ? "default" : "outline"}
                 size="sm" className={cn("h-8 text-xs gap-1.5",
-                  activeConv.iaStatus === "Pausado" || activeConv.iaStatus === "Vendedor assumiu" ? "bg-warning text-warning-foreground hover:bg-warning/90" : ""
+                  !activeConv.aiEnabled ? "bg-warning text-warning-foreground hover:bg-warning/90" : ""
                 )}
                 onClick={handleToggleIA}>
-                {activeConv.iaStatus === "Pausado" || activeConv.iaStatus === "Vendedor assumiu"
+                {!activeConv.aiEnabled
                   ? <><PlayCircle className="h-3.5 w-3.5" /> Retomar IA</>
                   : <><PauseCircle className="h-3.5 w-3.5" /> Pausar IA</>}
               </Button>
@@ -390,7 +363,7 @@ export default function Conversas() {
 
           {/* Input */}
           <div className="p-4 border-t border-border-subtle bg-surface/50 shrink-0">
-            {activeConv.iaStatus === "Pausado" || activeConv.iaStatus === "Vendedor assumiu" ? (
+            {!activeConv.aiEnabled || activeConv.waitingHumanReply ? (
               <form onSubmit={handleSend} className="flex gap-2">
                 <Input value={inputValue} onChange={(e) => setInputValue(e.target.value)}
                   placeholder={activeConv.waitingHumanReply ? "O lead está aguardando — responda agora..." : "Você assumiu o controle — escreva sua mensagem..."}

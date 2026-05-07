@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Logger } from '@nestjs/common';
+import { Controller, Post, Body, Logger, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Contact } from '../contacts/entities/contact.entity';
@@ -8,6 +8,7 @@ import { AiConfigService } from '../ai-config/ai-config.service';
 import { AiConfig, ConversationStep } from '../ai-config/entities/ai-config.entity';
 import { EvolutionInstance } from './entities/evolution-instance.entity';
 import { EvolutionService } from './evolution.service';
+import { ConversationsService } from '../conversations/conversations.service';
 
 @Controller('webhooks/evolution')
 export class WebhookController {
@@ -22,6 +23,7 @@ export class WebhookController {
     private readonly evoSvc: EvolutionService,
     @InjectRepository(EvolutionInstance)
     private readonly instanceRepo: Repository<EvolutionInstance>,
+    private readonly convSvc: ConversationsService,
   ) {}
 
   @Post()
@@ -88,7 +90,7 @@ export class WebhookController {
       return { received: true, duplicate: true };
     }
 
-    // Busca o contato (com normalização extra para garantir match)
+    // ── 1. Contact & Conversation Orchestration ────────────────────────
     const cleanPhone = phone.replace(/\D/g, '');
     let contact = await this.contactRepo.findOne({
       where: [
@@ -104,54 +106,48 @@ export class WebhookController {
         name: data.pushName || phone,
         source: 'whatsapp',
         origin: 'WhatsApp Evolution',
-        stage: 'atendimento_ia',
-        iaStatus: 'Em qualificação',
-        temperature: 'Morno',
-        status: 'Em conversa',
-        crm: 'Pipeline Comercial',
-        tags: ['whatsapp'],
-        lastInteraction: new Date(),
+        stage: 'novo',
         companyId,
       });
       contact = await this.contactRepo.save(contact);
     } else {
       this.logger.log(`👤 Contato encontrado: ${contact.name} (ID: ${contact.id})`);
-      const updates: any = { lastInteraction: new Date(), status: 'Em conversa' };
-      if (!contact.name || contact.name === contact.phone) {
-        updates.name = data.pushName || contact.name;
-      }
-      if (['respondeu', 'novo', 'envio'].includes(contact.stage)) {
-        updates.stage = 'atendimento_ia';
-        updates.iaStatus = 'Em qualificação';
-      }
-      await this.contactRepo.update(contact.id, updates);
-      contact = { ...contact, ...updates };
+      // Atualiza apenas lastInteraction no CRM
+      await this.contactRepo.update(contact.id, { lastInteraction: new Date() });
     }
 
+    // Localiza ou cria a conversa para este canal/instância
+    let conversation = await this.convSvc.findOrCreate(companyId, contact.id, instanceName);
+    
     // Save incoming message
     await this.messagesSvc.create({
       contactId: contact.id,
+      conversationId: conversation.id,
       text,
       sender: 'lead',
       instanceName,
       waMessageId,
     });
 
-    await this.contactRepo.update(contact.id, {
-      lastInteraction: new Date(),
-      status: 'Em conversa',
+    // Atualiza metadados da conversa
+    await this.convSvc.update(conversation.id, {
+      lastMessageAt: new Date(),
+      status: 'open',
     });
+    await this.convSvc.incrementUnread(conversation.id);
+    
+    // Reload conversation to get fresh state
+    conversation = await this.convSvc.update(conversation.id, {});
 
     // ── 2. Check blocked stages/statuses ─────────────────────────────────
-    const blockedStages = ['atendimento_humano', 'ganho', 'perdido'];
-    if (blockedStages.includes(contact.stage)) {
-      this.logger.log(`⏸️ Stage bloqueado: ${contact.stage} (${contact.name})`);
+    const blockedStages = ['atendimento_humano', 'ganho', 'perdido', 'finalizado'];
+    if (blockedStages.includes(conversation.currentStage)) {
+      this.logger.log(`⏸️ Conversa em stage bloqueado: ${conversation.currentStage} (${contact.name})`);
       return { received: true, iaSkipped: true };
     }
 
-    const blockedStatuses = ['Pausado', 'Vendedor assumiu', 'Negócio fechado'];
-    if (blockedStatuses.includes(contact.iaStatus)) {
-      this.logger.log(`⏸️ IA pausada: ${contact.iaStatus} (${contact.name})`);
+    if (!conversation.aiEnabled) {
+      this.logger.log(`⏸️ IA desativada nesta conversa: ${contact.name}`);
       return { received: true, iaSkipped: true };
     }
 
@@ -174,89 +170,74 @@ export class WebhookController {
         if (matched) {
           this.logger.log(`🔀 Keyword de transferência detectada: "${matched}"`);
 
-          // 1. Send handoff message BEFORE pausing
           const handoffMsg = 'Perfeito, vou te encaminhar agora para um dos nossos especialistas. Ele já vai continuar o atendimento por aqui.';
           try {
             await this.evoSvc.sendText(instanceName, phone, handoffMsg);
-            this.logger.log(`📤 Mensagem de handoff enviada para ${phone}`);
           } catch (err) {
             this.logger.error(`❌ Erro ao enviar mensagem de handoff: ${err.message}`);
           }
 
-          // 2. Save handoff message in history
+          // Salva mensagem da IA vinculada à conversa
           await this.messagesSvc.create({
             contactId: contact.id,
+            conversationId: conversation.id,
             text: handoffMsg,
             sender: 'ia',
             instanceName,
             status: 'sent',
           });
 
-          // 3. Update contact: pause IA + set handoff tracking
-          await this.contactRepo.update(contact.id, {
-            iaStatus: 'Vendedor assumiu',
-            stage: 'atendimento_humano',
+          // Handoff na Conversa
+          await this.convSvc.update(conversation.id, {
+            aiEnabled: false,
+            currentStage: 'atendimento_humano',
             waitingHumanReply: true,
             handoffReason: matched,
             handoffAt: new Date(),
           });
 
-          this.logger.log(`👤 Conversa ${contact.name} marcada como aguardando atendente (keyword: "${matched}")`);
-          return { received: true, transferred: true, keyword: matched };
-        }
-      }
+          // Opcional: Atualiza o CRM (stage)
+          await this.contactRepo.update(contact.id, { stage: 'atendimento_humano' });
 
-      // Pause on human reply check
-      if (rules.pauseOnHumanReply) {
-        // Check if last message before this one was from a human (not IA, not lead)
-        const recentMsgs = await this.messagesSvc.findByContact(contact.id, 5);
-        const lastNonLead = recentMsgs.filter(m => m.sender !== 'lead').pop();
-        if (lastNonLead?.sender === 'human') {
-          this.logger.log(`⏸️ Humano respondeu antes → IA não intervém`);
-          return { received: true, iaSkipped: true, reason: 'human_replied' };
+          this.logger.log(`👤 Conversa ${contact.name} movida para atendimento humano (keyword: "${matched}")`);
+          return { received: true, transferred: true, keyword: matched };
         }
       }
     }
 
-    // ── 5. Check exit conditions + advance stage BEFORE OpenAI ───────────
+    // ── 5. Check flow/stages ──────────────────────────────────────────────
     const hasFlow = aiConfig.conversationFlow && aiConfig.conversationFlow.length > 0;
     if (hasFlow) {
-      // Initialize stage if not set
-      if (!contact.conversationStage) {
+      if (!conversation.currentStage) {
         const firstStage = aiConfig.conversationFlow[0].id;
-        await this.contactRepo.update(contact.id, { conversationStage: firstStage });
-        contact.conversationStage = firstStage;
-        this.logger.log(`📍 Etapa inicial definida: ${firstStage}`);
+        await this.convSvc.update(conversation.id, { currentStage: firstStage });
+        conversation.currentStage = firstStage;
       }
 
-      // Check exit conditions of current stage
-      const currentStep = aiConfig.conversationFlow.find(s => s.id === contact.conversationStage);
+      const currentStep = aiConfig.conversationFlow.find(s => s.id === conversation.currentStage);
       if (currentStep) {
-        const shouldAdvance = this.checkExitConditions(currentStep, text, aiConfig, contact);
+        const shouldAdvance = this.checkExitConditions(currentStep, text);
         if (shouldAdvance && currentStep.nextStep) {
           this.logger.log(`📍 Avançando etapa: ${currentStep.id} → ${currentStep.nextStep}`);
-          await this.contactRepo.update(contact.id, { conversationStage: currentStep.nextStep });
-          contact.conversationStage = currentStep.nextStep;
-
-          // Check if advancing to a special stage triggers CRM move
-          if (aiConfig.autoRules?.moveOnQualify) {
-            const qualifyStage = aiConfig.autoRules.qualifyStage || 'qualificado';
-            const newStep = aiConfig.conversationFlow.find(s => s.id === currentStep.nextStep);
-            if (newStep?.id === 'handoff' || newStep?.id === 'fechamento') {
-              await this.contactRepo.update(contact.id, { stage: qualifyStage });
-              this.logger.log(`🏆 Lead qualificado → movido para ${qualifyStage}`);
-            }
-          }
+          await this.convSvc.update(conversation.id, { currentStage: currentStep.nextStep });
+          conversation.currentStage = currentStep.nextStep;
         }
       }
     }
 
     // ── 6. Call OpenAI ───────────────────────────────────────────────────
-    const history = await this.messagesSvc.findByContact(contact.id, 20);
+    // Prepara um "Virtual Contact" para a OpenAI não quebrar (mantendo campos esperados)
+    const virtualContact = { 
+      ...contact, 
+      conversationStage: conversation.currentStage,
+      iaStatus: conversation.aiEnabled ? 'Ativa' : 'Pausada'
+    } as any;
+
+    const history = await this.messagesSvc.findByContact(contact.id, 20); // TODO: migrar findByContact para findByConversation
     let aiPayload: AIResponsePayload | null;
 
     try {
-      aiPayload = await this.openaiSvc.generateResponse(aiConfig, contact, history);
+      aiPayload = await this.openaiSvc.generateResponse(aiConfig, virtualContact, history);
     } catch (err) {
       this.logger.error(`❌ Erro OpenAI: ${err.message}`);
       return { received: true, error: 'openai_failed' };
@@ -269,86 +250,70 @@ export class WebhookController {
 
     const aiResponse = aiPayload.reply;
 
-    // ── 7. Process suggested stage change (AI suggests, backend decides) ─
+    // ── 7. Process suggested stage change ───────────────────────────────
     if (hasFlow && aiPayload.suggestedNextStage) {
       const suggested = aiPayload.suggestedNextStage;
       const validStep = aiConfig.conversationFlow.find(s => s.id === suggested);
-      if (validStep && suggested !== contact.conversationStage) {
+      if (validStep && suggested !== conversation.currentStage) {
         this.logger.log(`🤖 IA sugeriu etapa: ${suggested} — aplicando`);
-        await this.contactRepo.update(contact.id, { conversationStage: suggested });
-        contact.conversationStage = suggested;
+        await this.convSvc.update(conversation.id, { currentStage: suggested });
+        conversation.currentStage = suggested;
       }
     }
 
-    // ── 8. Send via Evolution ────────────────────────────────────────────
+    // ── 8. Send & Save response ─────────────────────────────────────────
     try {
       await this.evoSvc.sendText(instanceName, phone, aiResponse);
-    } catch (err) {
-      this.logger.error(`❌ Erro Evolution: ${err.message}`);
+      
       await this.messagesSvc.create({
-        contactId: contact.id, text: aiResponse, sender: 'ia',
-        instanceName, status: 'failed',
+        contactId: contact.id,
+        conversationId: conversation.id,
+        text: aiResponse,
+        sender: 'ia',
+        instanceName,
+        status: 'sent',
       });
-      return { received: true, error: 'evolution_failed' };
+
+      this.logger.log(`🤖 IA respondeu ${contact.name} [stage: ${conversation.currentStage || '-'}]: "${aiResponse.substring(0, 40)}..."`);
+    } catch (err) {
+      this.logger.error(`❌ Erro ao enviar/salvar resposta da IA: ${err.message}`);
     }
 
-    // ── 9. Save response ────────────────────────────────────────────────
-    await this.messagesSvc.create({
-      contactId: contact.id, text: aiResponse, sender: 'ia',
-      instanceName, status: 'sent',
-    });
-
-    this.logger.log(`🤖 IA respondeu ${contact.name} [stage: ${contact.conversationStage || '-'}]: "${aiResponse.substring(0, 80)}..."`);
-
-    // ── 10. Handle handoff stage — pause IA after sending reply ──────────
-    const isHandoff = contact.conversationStage === 'handoff'
-      || contact.conversationStage === 'atendimento_humano';
-
+    // ── 9. Handle handoff after reply ──────────────────────────────────
+    const isHandoff = conversation.currentStage === 'handoff' || conversation.currentStage === 'atendimento_humano';
     if (isHandoff) {
-      await this.contactRepo.update(contact.id, {
-        iaStatus: 'Vendedor assumiu',
-        stage: 'atendimento_humano',
+      await this.convSvc.update(conversation.id, {
+        aiEnabled: false,
+        currentStage: 'atendimento_humano',
         waitingHumanReply: true,
         handoffReason: 'IA sugeriu handoff',
         handoffAt: new Date(),
       });
+      await this.contactRepo.update(contact.id, { stage: 'atendimento_humano' });
       this.logger.log(`🔀 Handoff aplicado pela IA para ${contact.name}`);
-      this.logger.log(`⏸️ IA pausada após handoff — conversa aguardando atendente`);
       return { received: true, responded: true, stage: 'handoff', handoff: true };
     }
 
-    return { received: true, responded: true, stage: contact.conversationStage };
+    return { received: true, responded: true, stage: conversation.currentStage };
   }
 
-  // ── Exit Conditions Checker ──────────────────────────────────────────
+  // ── Exit Conditions Checker (Simpler) ───────────────────────────────
 
-  private checkExitConditions(
-    step: ConversationStep,
-    lastMessage: string,
-    config: AiConfig,
-    contact: Contact,
-  ): boolean {
+  private checkExitConditions(step: ConversationStep, lastMessage: string): boolean {
     if (!step.exitConditions || step.exitConditions.length === 0) return false;
-
     const lowerMsg = lastMessage.toLowerCase();
 
-    // Simple keyword/phrase matching on exit conditions
-    // Each exit condition is a description — we check if the lead's message
-    // contains keywords that suggest the condition was met
     for (const condition of step.exitConditions) {
       const keywords = condition.toLowerCase()
         .replace(/[.,!?]/g, '')
         .split(/\s+/)
-        .filter(w => w.length > 3); // ignore short words
+        .filter(w => w.length > 3);
 
-      // If at least 60% of meaningful keywords from the condition appear in the message
       const matched = keywords.filter(kw => lowerMsg.includes(kw));
       if (keywords.length > 0 && matched.length / keywords.length >= 0.5) {
-        this.logger.log(`✅ Exit condition matched: "${condition}"`);
         return true;
       }
     }
-
     return false;
   }
 }

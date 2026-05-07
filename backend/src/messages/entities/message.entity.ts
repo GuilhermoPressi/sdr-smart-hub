@@ -15,12 +15,20 @@ export class Message {
   id: string;
 
   @Index()
-  @Column({ name: 'contact_id' })
+  @Column({ name: 'contact_id', nullable: true })
   contactId: string;
 
   @ManyToOne(() => Contact, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'contact_id' })
   contact: Contact;
+
+  @Index()
+  @Column({ name: 'conversation_id', nullable: true })
+  conversationId: string;
+
+  @ManyToOne('Conversation', { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'conversation_id' })
+  conversation: any;
 
   @Column({ type: 'text' })
   text: string;

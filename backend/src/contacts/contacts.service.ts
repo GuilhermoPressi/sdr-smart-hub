@@ -13,8 +13,16 @@ export class ContactsService {
 
   findAll(companyId: string) {
     const finalCompanyId = companyId || 'default-company';
+    const where: any[] = [{ companyId: finalCompanyId }];
+    
+    // Se for a empresa padrão, também mostra órfãos (para retrocompatibilidade)
+    if (finalCompanyId === 'default-company') {
+      where.push({ companyId: IsNull() });
+      where.push({ companyId: '' });
+    }
+
     return this.repo.find({ 
-      where: { companyId: finalCompanyId },
+      where,
       order: { updatedAt: 'DESC' } 
     });
   }
@@ -67,7 +75,7 @@ export class ContactsService {
         (SELECT created_at FROM messages WHERE contact_id = c.id ORDER BY created_at DESC LIMIT 1) AS "lastMessageAt",
         (SELECT COUNT(*) FROM messages WHERE contact_id = c.id AND status != 'read' AND sender = 'lead') AS "unreadCount"
       FROM contacts c
-      WHERE c.company_id = $1 
+      WHERE (c.company_id = $1 OR (c.company_id IS NULL AND $1 = 'default-company') OR (c.company_id = '' AND $1 = 'default-company'))
       AND EXISTS (SELECT 1 FROM messages WHERE contact_id = c.id)
       ORDER BY (SELECT created_at FROM messages WHERE contact_id = c.id ORDER BY created_at DESC LIMIT 1) DESC NULLS LAST
     `, [finalCompanyId]);
@@ -82,58 +90,69 @@ export class ContactsService {
     const finalCompanyId = companyId || 'default-company';
     const startTime = Date.now();
 
-    const [metrics] = await this.repo.query(`
+    // Contatos Totais (CRM)
+    const contactsMetrics = await this.repo.query(`
       SELECT
         COUNT(*) AS "totalContacts",
         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours') AS "leadsToday",
         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') AS "leadsLast7Days",
-        COUNT(*) FILTER (WHERE stage = 'atendimento_ia' OR ia_status = 'Em qualificação') AS "totalAiActive",
         COUNT(*) FILTER (WHERE stage = 'qualificado') AS "totalQualified",
-        COUNT(*) FILTER (WHERE stage = 'atendimento_humano') AS "totalHuman",
         COUNT(*) FILTER (WHERE stage = 'ganho') AS "totalConverted",
-        COUNT(*) FILTER (WHERE stage = 'perdido') AS "totalLost",
-        COUNT(*) FILTER (WHERE handoff_at IS NOT NULL) AS "aiHandoffs",
-        (SELECT COUNT(DISTINCT contact_id) FROM messages m JOIN contacts c2 ON m.contact_id = c2.id WHERE c2.company_id = $1 AND m.sender = 'lead' AND LENGTH(trim(m.text)) >= 3) AS "totalResponded"
+        COUNT(*) FILTER (WHERE stage = 'perdido') AS "totalLost"
       FROM contacts
-      WHERE company_id = $1
+      WHERE (company_id = $1 OR (company_id IS NULL AND $1 = 'default-company') OR (company_id = '' AND $1 = 'default-company'))
     `, [finalCompanyId]);
 
-    const totalContacts = parseInt(metrics.totalContacts || '0', 10);
-    const leadsToday = parseInt(metrics.leadsToday || '0', 10);
-    const leadsLast7Days = parseInt(metrics.leadsLast7Days || '0', 10);
-    const totalResponded = parseInt(metrics.totalResponded || '0', 10);
-    const totalAiActive = parseInt(metrics.totalAiActive || '0', 10);
-    const totalQualified = parseInt(metrics.totalQualified || '0', 10);
-    const totalHuman = parseInt(metrics.totalHuman || '0', 10);
-    const totalConverted = parseInt(metrics.totalConverted || '0', 10);
-    const totalLost = parseInt(metrics.totalLost || '0', 10);
-    const aiHandoffs = parseInt(metrics.aiHandoffs || '0', 10);
+    // Conversas e IA (Inbox)
+    const convMetrics = await this.repo.query(`
+      SELECT
+        COUNT(*) AS "totalConversations",
+        COUNT(*) FILTER (WHERE ai_enabled = true) AS "totalAiActive",
+        COUNT(*) FILTER (WHERE current_stage = 'atendimento_humano' OR waiting_human_reply = true) AS "totalHuman",
+        COUNT(*) FILTER (WHERE handoff_at IS NOT NULL) AS "aiHandoffs"
+      FROM conversations
+      WHERE (company_id = $1 OR (company_id IS NULL AND $1 = 'default-company') OR (company_id = '' AND $1 = 'default-company'))
+    `, [finalCompanyId]);
 
-    const responseRate = totalContacts > 0 ? (totalResponded / totalContacts) * 100 : 0;
-    const qualificationRate = totalResponded > 0 ? (totalQualified / totalResponded) * 100 : 0;
-    const conversionRate = totalContacts > 0 ? (totalConverted / totalContacts) * 100 : 0;
+    const m = contactsMetrics[0];
+    const c = convMetrics[0];
 
-    const result = {
+    const totalContacts = parseInt(m.totalContacts || '0', 10);
+    const totalConversations = parseInt(c.totalConversations || '0', 10);
+    const totalQualified = parseInt(m.totalQualified || '0', 10);
+    const totalConverted = parseInt(m.totalConverted || '0', 10);
+
+    return {
       totalContacts,
-      leadsToday,
-      leadsLast7Days,
-      totalResponded,
-      totalAiActive,
+      leadsToday: parseInt(m.leadsToday || '0', 10),
+      leadsLast7Days: parseInt(m.leadsLast7Days || '0', 10),
+      totalConversations,
+      totalAiActive: parseInt(c.totalAiActive || '0', 10),
       totalQualified,
-      totalHuman,
+      totalHuman: parseInt(c.totalHuman || '0', 10),
       totalConverted,
-      totalLost,
-      aiHandoffs,
-      responseRate: parseFloat(responseRate.toFixed(1)),
-      qualificationRate: parseFloat(qualificationRate.toFixed(1)),
-      conversionRate: parseFloat(conversionRate.toFixed(1)),
+      totalLost: parseInt(m.totalLost || '0', 10),
+      aiHandoffs: parseInt(c.aiHandoffs || '0', 10),
+      responseRate: totalContacts > 0 ? Math.round((totalConversations / totalContacts) * 100) : 0,
+      qualificationRate: totalConversations > 0 ? Math.round((totalQualified / totalConversations) * 100) : 0,
+      conversionRate: totalQualified > 0 ? Math.round((totalConverted / totalQualified) * 100) : 0,
+      queryTimeMs: Date.now() - startTime,
+      debug: {
+        companyId: finalCompanyId,
+        totalContactsRaw: m.totalContacts
+      }
     };
+  }
 
-    const duration = Date.now() - startTime;
-    console.log('[ContactsService] Dashboard metrics solicitado. Tempo da query:', duration, 'ms');
-    console.log('[ContactsService] Totais:', result);
-
-    return result;
+  async findByPhone(phone: string, companyId: string) {
+    const finalCompanyId = companyId || 'default-company';
+    const cleanPhone = phone.replace(/\D/g, '');
+    return this.repo.findOne({
+      where: [
+        { phone: cleanPhone, companyId: finalCompanyId },
+        { phone: cleanPhone.startsWith('55') ? cleanPhone.slice(2) : `55${cleanPhone}`, companyId: finalCompanyId },
+      ],
+    });
   }
 
   async importContacts(
@@ -186,72 +205,85 @@ export class ContactsService {
       .map(r => this.normalizePhone(r[phoneField]))
       .filter(p => p.length >= 10);
 
-    // 3. Buscar contatos existentes da empresa
+    // 3. Buscar contatos existentes: da empresa atual OU órfãos (para recuperação)
     const existingContacts = await this.repo.find({
-      where: {
-        companyId: config.companyId,
-        phone: In(normalizedPhones),
-      },
+      where: [
+        { companyId: config.companyId, phone: In(normalizedPhones) },
+        { companyId: IsNull(), phone: In(normalizedPhones) },
+        { companyId: '', phone: In(normalizedPhones) },
+        { companyId: 'undefined', phone: In(normalizedPhones) }
+      ]
     });
 
     const existingMap = new Map(existingContacts.map(c => [c.phone, c]));
+    const stats = {
+      total: records.length,
+      imported: 0,
+      updated: 0,
+      recovered: 0,
+      duplicates: 0,
+      invalid: 0,
+    };
+
     const toSave: Contact[] = [];
+    const startTime = Date.now();
 
-    // 4. Processar cada registro
     for (const record of records) {
-      const rawPhone = record[phoneField];
-      const phone = this.normalizePhone(rawPhone);
-
-      if (phone.length < 10) {
+      const phone = this.normalizePhone(record[phoneField]);
+      if (!phone) {
         stats.invalid++;
         continue;
       }
 
       const existing = existingMap.get(phone);
       if (existing) {
-        if (config.ignoreDuplicates) {
-          stats.duplicates++;
-          continue;
-        }
-        if (!config.updateExisting) {
-          stats.duplicates++;
-          continue;
-        }
-        // Preparar para atualização
-        this.mapRecordToContact(record, mapping, existing);
-        this.applyConfigToContact(config, existing);
-        toSave.push(existing);
-      } else {
-        // Novo contato
-        const nameField = Object.entries(mapping).find(([sys, csv]) => sys === 'name')?.[1];
-        const name = nameField ? record[nameField] : '';
+        // Lógica de Recuperação: se o contato existe mas está sem empresa ou em 'default-company' (e o usuário for de outra), ou se estava invisível
+        const isInvisible = !existing.companyId || existing.companyId === '' || existing.companyId === 'undefined';
         
-        if (!name && !config.createWithoutName) {
-          stats.invalid++;
+        if (isInvisible) {
+          existing.companyId = config.companyId;
+          this.mapRecordToContact(record, mapping, existing);
+          this.applyConfigToContact(config, existing);
+          toSave.push(existing);
+          stats.recovered++;
           continue;
         }
 
-        const newContact = this.repo.create({
-          phone,
-          companyId: config.companyId,
-          source: 'import',
-        });
-        this.mapRecordToContact(record, mapping, newContact);
-        this.applyConfigToContact(config, newContact);
-        toSave.push(newContact);
+        if (config.updateExisting) {
+          this.mapRecordToContact(record, mapping, existing);
+          this.applyConfigToContact(config, existing);
+          toSave.push(existing);
+          stats.updated++;
+        } else {
+          stats.duplicates++;
+        }
+        continue;
       }
+
+      const name = record[mapping['name']] || (config.createWithoutName ? `Contato ${phone.slice(-4)}` : '');
+      if (!name && !config.createWithoutName) {
+        stats.invalid++;
+        continue;
+      }
+
+      const newContact = this.repo.create({
+        phone,
+        companyId: config.companyId,
+        source: 'import',
+      });
+
+      this.mapRecordToContact(record, mapping, newContact);
+      this.applyConfigToContact(config, newContact);
+      toSave.push(newContact);
+      stats.imported++;
     }
 
     // 5. Salvar em lote
     if (toSave.length > 0) {
-      // TypeORM save lida com insert/update baseado no ID
       await this.repo.save(toSave, { chunk: 100 });
-      stats.imported = toSave.length;
     }
 
-    const duration = Date.now() - startTime;
-    console.log(`[ContactsService] Importação concluída em ${duration}ms.`, stats);
-
+    console.log(`[ContactsService] Importação finalizada. Totais:`, stats);
     return stats;
   }
 

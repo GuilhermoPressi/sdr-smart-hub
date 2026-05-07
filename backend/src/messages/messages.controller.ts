@@ -16,6 +16,15 @@ export class MessagesController {
     return this.messagesService.findByContact(contactId, take);
   }
 
+  @Get('conversation/:conversationId')
+  findByConversation(
+    @Param('conversationId') conversationId: string,
+    @Query('limit') limit?: string,
+  ) {
+    const take = limit ? parseInt(limit, 10) : 50;
+    return this.messagesService.findByConversation(conversationId, take);
+  }
+
   @Post('contact/:contactId/read')
   markAsRead(@Param('contactId') contactId: string) {
     return this.messagesService.markAsRead(contactId);
