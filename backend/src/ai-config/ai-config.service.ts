@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { AiConfig, ConversationStep } from './entities/ai-config.entity';
 import { OpenaiService } from '../openai/openai.service';
 import { Contact } from '../contacts/entities/contact.entity';
@@ -51,11 +51,14 @@ export class AiConfigService {
   }
 
   async findActive(companyId?: string): Promise<AiConfig | null> {
-    const where: any = { active: true };
     if (companyId) {
-      where.companyId = companyId;
+      // 1. Tenta buscar a IA ativa da empresa específica
+      const companyActive = await this.repo.findOneBy({ active: true, companyId });
+      if (companyActive) return companyActive;
     }
-    return this.repo.findOneBy(where);
+
+    // 2. Se não houver da empresa (ou não informada), busca a global (companyId nulo)
+    return this.repo.findOneBy({ active: true, companyId: IsNull() });
   }
 
   async save(data: Partial<AiConfig>): Promise<AiConfig> {

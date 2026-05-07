@@ -71,32 +71,36 @@ export class WebhookController {
 
     if (!text.trim()) return { received: true, ignored: true };
 
-    this.logger.log(`📩 Mensagem de ${phone}: "${text.substring(0, 60)}..."`);
+    this.logger.log(`📩 Mensagem recebida | Instance: ${instanceName} | Phone: ${phone} | Text: "${text.substring(0, 40)}..."`);
 
     // Busca a instância
     const instance = await this.instanceRepo.findOneBy({ instanceName });
     if (!instance) {
-      this.logger.error(`❌ Instância "${instanceName}" não encontrada no banco. Ignorando webhook.`);
+      this.logger.error(`❌ Instância "${instanceName}" não encontrada no banco. Verifique se o nome da instância na Evolution bate com o banco.`);
       return { received: true, ignored: true, reason: 'instance_not_found' };
     }
 
     const companyId = instance.companyId;
+    this.logger.log(`🏢 Empresa identificada: ${companyId}`);
 
     // Dedup
     if (await this.messagesSvc.existsByWaId(waMessageId)) {
       return { received: true, duplicate: true };
     }
 
+    // Busca o contato (com normalização extra para garantir match)
+    const cleanPhone = phone.replace(/\D/g, '');
     let contact = await this.contactRepo.findOne({
       where: [
-        { phone, companyId },
-        { phone: phone.startsWith('55') ? phone.slice(2) : `55${phone}`, companyId },
+        { phone: cleanPhone, companyId },
+        { phone: cleanPhone.startsWith('55') ? cleanPhone.slice(2) : `55${cleanPhone}`, companyId },
       ],
     });
 
     if (!contact) {
+      this.logger.log(`🆕 Criando novo contato para ${phone} na empresa ${companyId}`);
       contact = this.contactRepo.create({
-        phone,
+        phone: cleanPhone,
         name: data.pushName || phone,
         source: 'whatsapp',
         origin: 'WhatsApp Evolution',
@@ -110,8 +114,8 @@ export class WebhookController {
         companyId,
       });
       contact = await this.contactRepo.save(contact);
-      this.logger.log(`✅ Novo contato: ${contact.name} (${phone})`);
     } else {
+      this.logger.log(`👤 Contato encontrado: ${contact.name} (ID: ${contact.id})`);
       const updates: any = { lastInteraction: new Date(), status: 'Em conversa' };
       if (!contact.name || contact.name === contact.phone) {
         updates.name = data.pushName || contact.name;
@@ -157,6 +161,7 @@ export class WebhookController {
       this.logger.warn(`⚠️ Nenhuma IA ativa para a empresa ${companyId}.`);
       return { received: true, noConfig: true };
     }
+    this.logger.log(`🤖 IA Ativa: ${aiConfig.displayName || aiConfig.internalName} (ID: ${aiConfig.id})`);
 
     // ── 4. Check auto rules BEFORE calling OpenAI ────────────────────────
     if (aiConfig.autoRules) {
