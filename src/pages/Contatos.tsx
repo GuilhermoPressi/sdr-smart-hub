@@ -58,7 +58,8 @@ export default function Contatos() {
   const [origin, setOrigin] = useState("all");
   const [tag, setTag] = useState("all");
   const [status, setStatus] = useState("all");
-  const [viewingContact, setViewingContact] = useState<Lead | null>(null);
+  const [viewingContactId, setViewingContactId] = useState<string | null>(null);
+  const viewingContact = useMemo(() => leads.find(l => l.id === viewingContactId) || null, [leads, viewingContactId]);
   const [selected, setSelected] = useState<string[]>([]);
 
   const [tagInput, setTagInput] = useState("");
@@ -211,7 +212,7 @@ export default function Contatos() {
                     return (
                       <tr 
                         key={l.id} 
-                        onClick={() => setViewingContact(l)}
+                        onClick={() => setViewingContactId(l.id)}
                         className={cn("border-t border-border-subtle transition-colors cursor-pointer", checked ? "bg-primary/5" : "hover:bg-surface/40")}
                       >
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -345,7 +346,7 @@ export default function Contatos() {
 
       <ContactDetailsSheet 
         viewingContact={viewingContact} 
-        setViewingContact={setViewingContact} 
+        setViewingContact={(l) => setViewingContactId(l?.id || null)} 
         onEdit={(l) => {
           setEditingContact(l);
           setIsContactModalOpen(true);
