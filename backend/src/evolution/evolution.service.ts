@@ -146,7 +146,23 @@ export class EvolutionService {
 
   async listInstances(companyId?: string) {
     const where = companyId ? { companyId } : {};
-    return this.instanceRepo.find({ where, order: { createdAt: 'DESC' } });
+    const instances = await this.instanceRepo.find({ where, order: { createdAt: 'DESC' } });
+    
+    // Sincroniza o status real de cada instância com a Evolution
+    const updatedInstances = await Promise.all(
+      instances.map(async (inst) => {
+        try {
+          const stateData = await this.getConnectionState(inst.instanceName);
+          const state = stateData?.instance?.state || stateData?.state;
+          inst.status = state === 'open' ? 'connected' : (state || 'disconnected');
+        } catch (err) {
+          this.logger.warn(`Falha ao sincronizar status da instância ${inst.instanceName}: ${err.message}`);
+        }
+        return inst;
+      })
+    );
+
+    return updatedInstances;
   }
 
   // ─── Messaging ────────────────────────────────────────────
