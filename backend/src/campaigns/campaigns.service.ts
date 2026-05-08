@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Campaign } from './entities/campaign.entity';
@@ -24,7 +24,7 @@ interface CreateCampaignDto {
 }
 
 @Injectable()
-export class CampaignsService {
+export class CampaignsService implements OnModuleInit {
   private readonly logger = new Logger(CampaignsService.name);
 
   constructor(
@@ -145,6 +145,19 @@ export class CampaignsService {
     return this.campaignRepo.findOneBy({ id });
   }
 
+  async onModuleInit() {
+    // Retoma campanhas que ficaram presas em 'sending' após reinicialização
+    const interrupted = await this.campaignRepo.find({ where: { status: 'sending' } });
+    if (interrupted.length > 0) {
+      this.logger.log(`♻️ Retomando ${interrupted.length} campanhas interrompidas...`);
+      for (const c of interrupted) {
+        this.processAsync(c.id).catch(err => {
+          this.logger.error(`❌ Erro ao retomar campanha ${c.id}: ${err.message}`);
+        });
+      }
+    }
+  }
+
   // ── Async Processing ─────────────────────────────────────────────────
 
   private async processAsync(campaignId: string): Promise<void> {
@@ -182,43 +195,58 @@ export class CampaignsService {
         minuteStart = Date.now();
       }
 
-      // Send
-      try {
-        if (campaign.messageType === 'text' || !campaign.messageType) {
-          const text = this.replaceVariables(campaign.message, recipient);
-          await this.evoSvc.sendText(campaign.instanceName, recipient.phone, text);
-        } else {
-          const caption = this.replaceVariables(campaign.caption || '', recipient);
-          await this.evoSvc.sendMedia(
-            campaign.instanceName,
-            recipient.phone,
-            campaign.mediaUrl,
-            caption,
-            campaign.messageType as any,
-            campaign.mediaFileName
-          );
-        }
+      // Send with Retry Logic (3 attempts)
+      let attempts = 0;
+      let success = false;
+      let lastError = '';
 
+      while (attempts < 3 && !success) {
+        try {
+          if (campaign.messageType === 'text' || !campaign.messageType) {
+            const text = this.replaceVariables(campaign.message, recipient);
+            await this.evoSvc.sendText(campaign.instanceName, recipient.phone, text);
+          } else {
+            const caption = this.replaceVariables(campaign.caption || '', recipient);
+            await this.evoSvc.sendMedia(
+              campaign.instanceName,
+              recipient.phone,
+              campaign.mediaUrl,
+              caption,
+              campaign.messageType as any,
+              campaign.mediaFileName
+            );
+          }
+          success = true;
+        } catch (err) {
+          attempts++;
+          lastError = err.message;
+          if (attempts < 3) {
+            this.logger.warn(`⚠️ Tentativa ${attempts} falhou para ${recipient.phone}: ${err.message}. Retentando em 2s...`);
+            await this.sleep(2000);
+          }
+        }
+      }
+
+      if (success) {
         sentCount++;
         sentThisMinute++;
-        await this.recipientRepo.update(recipient.id, { status: 'sent', sentAt: new Date() });
+        await this.recipientRepo.update(recipient.id, { status: 'sent', sentAt: new Date(), error: null });
         await this.campaignRepo.update(campaignId, { sent: sentCount });
         this.logger.log(`✅ Mensagem (${campaign.messageType}) enviada para ${recipient.name || recipient.phone} (${sentCount}/${campaign.total})`);
-      } catch (err) {
+      } else {
         failedCount++;
-        await this.recipientRepo.update(recipient.id, { status: 'failed', error: err.message?.substring(0, 200) });
+        await this.recipientRepo.update(recipient.id, { status: 'failed', error: lastError.substring(0, 200) });
         await this.campaignRepo.update(campaignId, { failed: failedCount });
-        this.logger.error(`❌ Erro ao enviar para ${recipient.phone}: ${err.message}`);
+        this.logger.error(`❌ Erro definitivo ao enviar para ${recipient.phone}: ${lastError}`);
       }
 
       // Delay between messages
       let delay = campaign.delaySeconds * 1000;
       if (campaign.simulateHuman) {
-        // Random variation: 70% to 150% of configured delay
         const variation = 0.7 + Math.random() * 0.8;
         delay = Math.round(delay * variation);
       }
-      delay = Math.max(3000, delay); // Minimum 3 seconds
+      delay = Math.max(3000, delay);
       await this.sleep(delay);
     }
 

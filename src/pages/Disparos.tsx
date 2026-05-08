@@ -281,13 +281,22 @@ export default function Disparos() {
           <div className="p-4 border-b border-border-subtle"><h4 className="font-medium text-sm">Destinatários ({recipients.length})</h4></div>
           <div className="max-h-96 overflow-y-auto divide-y divide-border-subtle">
             {recipients.map(r => (
-              <div key={r.id} className="flex items-center gap-3 px-4 py-3 text-sm">
-                <span className={cn("h-2 w-2 rounded-full shrink-0", r.status === "sent" ? "bg-success" : r.status === "failed" ? "bg-destructive" : "bg-muted-foreground/30")} />
-                <span className="flex-1 truncate">{r.name || r.phone}</span>
-                <span className="text-xs text-muted-foreground font-mono">{r.phone}</span>
-                <span className={cn("text-xs font-medium", r.status === "sent" ? "text-success" : r.status === "failed" ? "text-destructive" : "text-muted-foreground")}>
-                  {r.status === "sent" ? "Enviado" : r.status === "failed" ? "Falhou" : "Pendente"}
-                </span>
+              <div key={r.id} className="px-4 py-3 border-b border-border-subtle last:border-0">
+                <div className="flex items-center gap-3 text-sm">
+                  <span className={cn("h-2 w-2 rounded-full shrink-0", r.status === "sent" ? "bg-success" : r.status === "failed" ? "bg-destructive" : "bg-muted-foreground/30")} />
+                  <span className="flex-1 truncate font-medium">{r.name || r.phone}</span>
+                  <span className="text-xs text-muted-foreground font-mono">{r.phone}</span>
+                  <span className={cn("text-xs font-semibold", r.status === "sent" ? "text-success" : r.status === "failed" ? "text-destructive" : "text-muted-foreground")}>
+                    {r.status === "sent" ? "Enviado" : r.status === "failed" ? "Falhou" : "Pendente"}
+                  </span>
+                </div>
+                {r.status === "failed" && r.error && (
+                  <div className="mt-1 ml-5">
+                    <p className="text-[11px] text-destructive/80 bg-destructive/5 rounded px-2 py-1 border border-destructive/10 italic">
+                      Motivo: {r.error}
+                    </p>
+                  </div>
+                )}
               </div>
             ))}
           </div>
