@@ -195,7 +195,32 @@ export class CampaignsService implements OnModuleInit {
         minuteStart = Date.now();
       }
 
-      // Send with Retry Logic (3 attempts)
+      // 1. Validar formato básico do número
+      const cleanPhone = recipient.phone.replace(/\D/g, '');
+      if (cleanPhone.length < 10 || cleanPhone.length > 15) {
+        failedCount++;
+        await this.recipientRepo.update(recipient.id, { 
+          status: 'failed', 
+          error: `Número inválido ou mal formatado (${cleanPhone.length} dígitos)` 
+        });
+        await this.campaignRepo.update(campaignId, { failed: failedCount });
+        this.logger.warn(`🚫 Número inválido ignorado: ${cleanPhone}`);
+        continue;
+      }
+
+      // 2. Verificar se a instância ainda está conectada antes de tentar enviar
+      try {
+        const state = await this.evoSvc.getConnectionState(campaign.instanceName);
+        if (state !== 'open' && state !== 'connected') {
+          this.logger.error(`❌ Instância ${campaign.instanceName} desconectada (${state}). Pausando campanha.`);
+          await this.campaignRepo.update(campaignId, { status: 'paused' });
+          break;
+        }
+      } catch (err) {
+        this.logger.warn(`⚠️ Não foi possível verificar status da instância: ${err.message}`);
+      }
+
+      // 3. Send with Retry Logic (3 attempts)
       let attempts = 0;
       let success = false;
       let lastError = '';
@@ -219,9 +244,12 @@ export class CampaignsService implements OnModuleInit {
           success = true;
         } catch (err) {
           attempts++;
-          lastError = err.message;
+          // Tenta pegar a mensagem de erro do corpo da resposta da Evolution
+          const evoError = err.response?.data?.message || err.response?.data?.error || err.message;
+          lastError = evoError;
+          
           if (attempts < 3) {
-            this.logger.warn(`⚠️ Tentativa ${attempts} falhou para ${recipient.phone}: ${err.message}. Retentando em 2s...`);
+            this.logger.warn(`⚠️ Tentativa ${attempts} falhou para ${recipient.phone}: ${evoError}. Retentando em 2s...`);
             await this.sleep(2000);
           }
         }
