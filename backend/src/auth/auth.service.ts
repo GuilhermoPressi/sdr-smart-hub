@@ -25,7 +25,7 @@ export class AuthService implements OnModuleInit {
       // 1. Garantir que a empresa padrão existe
       await this.dataSource.query(`
         INSERT INTO companies (id, name, slug, active, created_at, updated_at)
-        VALUES ('00000000-0000-0000-0000-000000000000', 'Default Company', $1, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES ('00000000-0000-0000-0000-000000000000'::uuid, 'Default Company', $1, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT (slug) DO NOTHING
       `, [defaultCompany]);
 
@@ -52,7 +52,7 @@ export class AuthService implements OnModuleInit {
         try {
           // Update NULL, empty or 'undefined' string company_id
           const result = await this.dataSource.query(
-            `UPDATE ${config.table} SET ${config.col} = $1 
+            `UPDATE ${config.table} SET ${config.col} = $1::uuid 
              WHERE ${config.col} IS NULL 
                 OR ${config.col}::text = '' 
                 OR ${config.col}::text = 'undefined' 
@@ -78,7 +78,7 @@ export class AuthService implements OnModuleInit {
       `);
 
       const orphanGroups = await this.dataSource.query(`
-        SELECT DISTINCT m.contact_id, m.instance_name, COALESCE(c.company_id, $1) as company_id
+        SELECT DISTINCT m.contact_id, m.instance_name, COALESCE(c.company_id, $1::uuid) as company_id
         FROM messages m
         JOIN contacts c ON m.contact_id = c.id
         WHERE m.conversation_id IS NULL
