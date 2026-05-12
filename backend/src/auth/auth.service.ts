@@ -53,7 +53,10 @@ export class AuthService implements OnModuleInit {
           // Update NULL, empty or 'undefined' string company_id
           const result = await this.dataSource.query(
             `UPDATE ${config.table} SET ${config.col} = $1 
-             WHERE ${config.col} IS NULL OR ${config.col} = '' OR ${config.col} = 'undefined' OR ${config.col} = 'default-company'`,
+             WHERE ${config.col} IS NULL 
+                OR ${config.col}::text = '' 
+                OR ${config.col}::text = 'undefined' 
+                OR ${config.col}::text = 'default-company'`,
             [defaultCompanyId]
           );
           
@@ -71,7 +74,7 @@ export class AuthService implements OnModuleInit {
         UPDATE messages m
         SET company_id = c.company_id
         FROM contacts c
-        WHERE m.contact_id = c.id AND (m.company_id IS NULL OR m.company_id = '')
+        WHERE m.contact_id = c.id AND (m.company_id IS NULL OR m.company_id::text = '')
       `);
 
       const orphanGroups = await this.dataSource.query(`
