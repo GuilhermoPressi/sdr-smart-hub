@@ -11,6 +11,8 @@ import { UserRole } from '../users/entities/user.entity';
 import { EvolutionInstance } from './entities/evolution-instance.entity';
 import { ConversationsService } from '../conversations/conversations.service';
 
+import { TenantHelper } from '../common/utils/tenant.utils';
+
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('evolution')
 export class EvolutionController {
@@ -26,20 +28,20 @@ export class EvolutionController {
     private readonly convSvc: ConversationsService,
   ) {}
 
+  private getCompanyId(req: any): string {
+    return TenantHelper.getCompanyIdOrThrow(req.user);
+  }
+
   @Post('instances')
   async createInstance(@Req() req, @Body() body: { instanceName: string; webhookUrl?: string }) {
-    const companyId = req.user.companyId || 'default-company';
+    const companyId = this.getCompanyId(req);
     // instanceName from body is actually the "name" they want to display
     return this.evo.createInstance(body.instanceName, companyId, body.webhookUrl);
   }
 
   @Get('instances')
   async listInstances(@Req() req) {
-    const companyId = req.user.companyId;
-    if (!companyId && req.user.role !== UserRole.ADMIN) {
-      return [];
-    }
-    // If it's a super admin without companyId, maybe list all or none. Let's list all if no companyId, else list by companyId
+    const companyId = this.getCompanyId(req);
     return this.evo.listInstances(companyId);
   }
 
@@ -75,16 +77,19 @@ export class EvolutionController {
    */
   @Post('send-text')
   async sendText(@Req() req, @Body() body: { instanceName?: string; phone: string; text: string; contactId?: string }) {
-    const companyId = req.user.companyId;
-    const { instanceName, phone, text, contactId } = body;
+    const companyId = this.getCompanyId(req);
+    const { instanceName, phone, text } = body;
 
     let targetInstanceName = instanceName;
 
-    // Busca a instância correta (se não for passada, busca a primeira do cliente)
-    if (!targetInstanceName && companyId) {
-      const instances = await this.instanceRepo.find({ where: { companyId, status: 'connected' } });
-      if (instances.length > 0) {
-        targetInstanceName = instances[0].instanceName;
+    // Busca a instância correta (se não for passada, busca a primeira conectada do cliente)
+    if (!targetInstanceName) {
+      const instance = await this.instanceRepo.findOne({ 
+        where: { companyId, status: 'connected' },
+        order: { updatedAt: 'DESC' }
+      });
+      if (instance) {
+        targetInstanceName = instance.instanceName;
       }
     }
 
@@ -92,24 +97,22 @@ export class EvolutionController {
       throw new NotFoundException('Nenhuma instância conectada encontrada para este envio.');
     }
 
+    // Garante que a instância pertence à empresa
+    const instanceOwner = await this.instanceRepo.findOneBy({ instanceName: targetInstanceName, companyId });
+    if (!instanceOwner) {
+      throw new UnauthorizedException('Você não tem permissão para usar esta instância.');
+    }
+
     // 1. Envia via Evolution
     const result = await this.evo.sendText(targetInstanceName, phone, text);
 
     // 2. Busca o contato pelo telefone (e companyId) para salvar a mensagem
     const normalizedPhone = phone.replace(/\D/g, '');
-    const contactWhere: any = [
-      { phone: normalizedPhone },
-      { phone: `55${normalizedPhone}` },
-      { phone },
-    ];
-    
-    // Adicionar filtro de companyId se houver
-    const finalWhere = companyId 
-      ? contactWhere.map(w => ({ ...w, companyId }))
-      : contactWhere;
-
     const contact = await this.contactRepo.findOne({
-      where: finalWhere,
+      where: [
+        { phone: normalizedPhone, companyId },
+        { phone: `55${normalizedPhone}`, companyId },
+      ],
     });
 
     if (contact) {
@@ -130,14 +133,12 @@ export class EvolutionController {
         lastMessageAt: new Date(),
         waitingHumanReply: false,
         unreadCount: 0,
-      });
+      }, companyId);
 
       // Atualiza lastInteraction no CRM
       await this.contactRepo.update(contact.id, { lastInteraction: new Date() });
 
       this.logger.log(`Mensagem humana salva → contato ${contact.name} (${phone}) na conversa ${conversation.id}`);
-    } else {
-      this.logger.warn(`Contato não encontrado para phone ${phone} — mensagem enviada mas não salva no histórico`);
     }
 
     return result;

@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Contact } from '../../contacts/entities/contact.entity';
+import { Company } from '../../companies/entities/company.entity';
 
 @Entity('messages')
 export class Message {
@@ -17,6 +18,14 @@ export class Message {
   @Index()
   @Column({ name: 'contact_id', nullable: true })
   contactId: string;
+
+  @Index()
+  @Column({ name: 'company_id', nullable: true })
+  companyId: string;
+
+  @ManyToOne(() => Company)
+  @JoinColumn({ name: 'company_id' })
+  company: Company;
 
   @ManyToOne(() => Contact, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'contact_id' })

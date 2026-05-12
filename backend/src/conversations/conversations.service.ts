@@ -13,41 +13,38 @@ export class ConversationsService {
   ) {}
 
   async findAll(companyId: string) {
-    const finalCompanyId = companyId || 'default-company';
     return this.repo.find({
-      where: { companyId: finalCompanyId },
+      where: { companyId },
       relations: ['contact'],
       order: { lastMessageAt: 'DESC' },
     });
   }
 
   async findOrCreate(companyId: string, contactId: string, instanceName: string): Promise<Conversation> {
-    const finalCompanyId = companyId || 'default-company';
-    
     let conv = await this.repo.findOneBy({
-      companyId: finalCompanyId,
+      companyId,
       contactId,
       instanceName,
     });
 
     if (!conv) {
       conv = this.repo.create({
-        companyId: finalCompanyId,
+        companyId,
         contactId,
         instanceName,
         aiEnabled: true,
         status: 'open',
       });
       conv = await this.repo.save(conv);
-      this.logger.log(`🆕 Nova conversa criada: Contact=${contactId} | Instance=${instanceName}`);
+      this.logger.log(`🆕 Nova conversa criada: Contact=${contactId} | Instance=${instanceName} | Company=${companyId}`);
     }
 
     return conv;
   }
 
-  async update(id: string, data: Partial<Conversation>) {
-    await this.repo.update(id, data);
-    return this.repo.findOneBy({ id });
+  async update(id: string, data: Partial<Conversation>, companyId: string) {
+    await this.repo.update({ id, companyId }, data);
+    return this.repo.findOneBy({ id, companyId });
   }
 
   async incrementUnread(id: string) {
@@ -64,7 +61,7 @@ export class ConversationsService {
       .getMany();
   }
 
-  async resetUnread(id: string) {
-    await this.repo.update(id, { unreadCount: 0 });
+  async resetUnread(id: string, companyId: string) {
+    await this.repo.update({ id, companyId }, { unreadCount: 0 });
   }
 }

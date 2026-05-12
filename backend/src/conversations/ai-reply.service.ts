@@ -102,7 +102,7 @@ export class AiReplyService implements OnModuleInit {
       } as any;
 
       // Busca histórico real (as últimas 20 mensagens em ordem cronológica correta)
-      const history = await this.messagesSvc.findByConversation(conv.id, 20);
+      const history = await this.messagesSvc.findByConversation(conv.id, conv.companyId, 20);
       
       // Adiciona instrução de continuidade se houver histórico
       if (history.length > 1) {
@@ -136,6 +136,7 @@ export class AiReplyService implements OnModuleInit {
       await this.messagesSvc.create({
         contactId: contact.id,
         conversationId: conv.id,
+        companyId: conv.companyId,
         text: aiResponse,
         sender: 'ia',
         instanceName: conv.instanceName,
@@ -151,8 +152,8 @@ export class AiReplyService implements OnModuleInit {
           waitingHumanReply: true,
           handoffReason: 'IA sugeriu handoff',
           handoffAt: new Date(),
-        });
-        await this.contactRepo.update(contact.id, { stage: 'atendimento_humano' });
+        }, conv.companyId);
+        await this.contactRepo.update({ id: contact.id, companyId: conv.companyId }, { stage: 'atendimento_humano' });
       }
 
       this.logger.log(`✅ Resposta enviada para ${contact.name} (${contact.phone})`);

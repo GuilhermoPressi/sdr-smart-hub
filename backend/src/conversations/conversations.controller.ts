@@ -1,6 +1,4 @@
-import { Controller, Get, Patch, Param, Body, UseGuards, Req } from '@nestjs/common';
-import { ConversationsService } from './conversations.service';
-import { JwtAuthGuard } from '../auth/auth.guard';
+import { TenantHelper } from '../common/utils/tenant.utils';
 
 @UseGuards(JwtAuthGuard)
 @Controller('conversations')
@@ -9,17 +7,19 @@ export class ConversationsController {
 
   @Get()
   findAll(@Req() req) {
-    const companyId = req.user.companyId || 'default-company';
+    const companyId = TenantHelper.getCompanyIdOrThrow(req.user);
     return this.service.findAll(companyId);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() data: any) {
-    return this.service.update(id, data);
+  update(@Req() req, @Param('id') id: string, @Body() data: any) {
+    const companyId = TenantHelper.getCompanyIdOrThrow(req.user);
+    return this.service.update(id, data, companyId);
   }
 
   @Patch(':id/read')
-  markAsRead(@Param('id') id: string) {
-    return this.service.resetUnread(id);
+  markAsRead(@Req() req, @Param('id') id: string) {
+    const companyId = TenantHelper.getCompanyIdOrThrow(req.user);
+    return this.service.resetUnread(id, companyId);
   }
 }

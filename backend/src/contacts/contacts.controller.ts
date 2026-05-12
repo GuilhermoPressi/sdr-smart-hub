@@ -3,13 +3,15 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ContactsService } from './contacts.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 
+import { TenantHelper } from '../common/utils/tenant.utils';
+
 @UseGuards(JwtAuthGuard)
 @Controller('contacts')
 export class ContactsController {
   constructor(private readonly contactsService: ContactsService) {}
 
   private getCompanyId(req: any): string {
-    return req.user.companyId || 'default-company';
+    return TenantHelper.getCompanyIdOrThrow(req.user);
   }
 
   @Get()
@@ -68,12 +70,12 @@ export class ContactsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.contactsService.findOne(id);
+  findOne(@Req() req, @Param('id') id: string) {
+    return this.contactsService.findOne(id, this.getCompanyId(req));
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() data: any) {
-    return this.contactsService.update(id, data);
+  update(@Req() req, @Param('id') id: string, @Body() data: any) {
+    return this.contactsService.update(id, data, this.getCompanyId(req));
   }
 }

@@ -21,13 +21,31 @@ export class AuthService implements OnModuleInit {
       this.logger.log('--- [AuthService] INICIANDO REPARO MULTI-TENANT ---');
       
       const defaultCompany = 'default-company';
+
+      // 1. Garantir que a empresa padrão existe
+      await this.dataSource.query(`
+        INSERT INTO companies (id, name, slug, active, created_at, updated_at)
+        VALUES ('00000000-0000-0000-0000-000000000000', 'Default Company', $1, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (slug) DO NOTHING
+      `, [defaultCompany]);
+
+      // Pegar o ID real da empresa padrão (caso seja uuid ou slug)
+      const companies = await this.dataSource.query(`SELECT id FROM companies WHERE slug = $1 LIMIT 1`, [defaultCompany]);
+      const defaultCompanyId = companies[0]?.id;
+
+      if (!defaultCompanyId) {
+        throw new Error('Falha ao criar/recuperar empresa padrão');
+      }
       
-      // Tabelas para reparar
+      // 2. Tabelas para reparar
       const configs = [
         { table: 'users', col: 'company_id' },
         { table: 'contacts', col: 'company_id' },
         { table: 'evolution_instances', col: 'company_id' },
-        { table: 'conversations', col: 'company_id' }
+        { table: 'conversations', col: 'company_id' },
+        { table: 'ai_configs', col: 'company_id' },
+        { table: 'campaigns', col: 'company_id' },
+        { table: 'messages', col: 'company_id' }
       ];
 
       for (const config of configs) {
@@ -35,33 +53,33 @@ export class AuthService implements OnModuleInit {
           // Update NULL, empty or 'undefined' string company_id
           const result = await this.dataSource.query(
             `UPDATE ${config.table} SET ${config.col} = $1 
-             WHERE ${config.col} IS NULL OR ${config.col} = '' OR ${config.col} = 'undefined'`,
-            [defaultCompany]
+             WHERE ${config.col} IS NULL OR ${config.col} = '' OR ${config.col} = 'undefined' OR ${config.col} = 'default-company'`,
+            [defaultCompanyId]
           );
           
           const affected = Array.isArray(result) ? (result[1] || 0) : (result?.affected || 0);
           if (affected > 0) {
-            this.logger.log(`[AuthService] Reparo concluído: ${affected} registros na tabela "${config.table}" (coluna "${config.col}") movidos para "${defaultCompany}"`);
+            this.logger.log(`[AuthService] Reparo concluído: ${affected} registros na tabela "${config.table}" movidos para "${defaultCompanyId}"`);
           }
         } catch (e) {
           this.logger.warn(`[AuthService] Aviso ao reparar tabela "${config.table}": ${e.message}`);
         }
       }
       
-      // Verificar contatos visíveis após reparo
-      const visibleContacts = await this.dataSource.query(
-        `SELECT COUNT(*) as total FROM contacts WHERE company_id = $1`,
-        [defaultCompany]
-      );
-      this.logger.log(`[AuthService] Total de contatos visíveis para "${defaultCompany}": ${visibleContacts[0]?.total || 0}`);
+      // 3. Migração de Mensagens para Conversas (Inbox) e Reparo de CompanyId em Mensagens
+      await this.dataSource.query(`
+        UPDATE messages m
+        SET company_id = c.company_id
+        FROM contacts c
+        WHERE m.contact_id = c.id AND (m.company_id IS NULL OR m.company_id = '')
+      `);
 
-      // 3. Migração de Mensagens para Conversas
       const orphanGroups = await this.dataSource.query(`
         SELECT DISTINCT m.contact_id, m.instance_name, COALESCE(c.company_id, $1) as company_id
         FROM messages m
         JOIN contacts c ON m.contact_id = c.id
         WHERE m.conversation_id IS NULL
-      `, [defaultCompany]);
+      `, [defaultCompanyId]);
 
       if (orphanGroups.length > 0) {
         this.logger.log(`[AuthService] Migrando ${orphanGroups.length} grupos de mensagens órfãs para a arquitetura Inbox...`);
@@ -127,7 +145,7 @@ export class AuthService implements OnModuleInit {
       sub: user.id, 
       email: user.email, 
       role: user.role, 
-      companyId: user.companyId || (user.role === UserRole.ADMIN ? 'default-company' : null) 
+      companyId: user.companyId
     };
     
     const { passwordHash, ...result } = user;

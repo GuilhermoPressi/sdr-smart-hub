@@ -21,6 +21,7 @@ import { User } from './users/entities/user.entity';
 import { EvolutionInstance } from './evolution/entities/evolution-instance.entity';
 import { ConversationsModule } from './conversations/conversations.module';
 import { Conversation } from './conversations/entities/conversation.entity';
+import { Company } from './companies/entities/company.entity';
 
 @Module({
   imports: [
@@ -31,7 +32,7 @@ import { Conversation } from './conversations/entities/conversation.entity';
       username: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASS || 'postgres',
       database: process.env.DB_NAME || 'sdr_smart_hub',
-      entities: [Contact, ApifyLeadSearch, Message, AiConfig, Campaign, CampaignRecipient, User, EvolutionInstance, Conversation],
+      entities: [Contact, ApifyLeadSearch, Message, AiConfig, Campaign, CampaignRecipient, User, EvolutionInstance, Conversation, Company],
       synchronize: true,
       ssl: false,
     }),

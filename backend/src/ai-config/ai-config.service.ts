@@ -41,24 +41,20 @@ export class AiConfigService {
     private readonly openaiService: OpenaiService,
   ) {}
 
-  async findAll(): Promise<AiConfig[]> {
-    return this.repo.find({ order: { createdAt: 'DESC' } });
+  async findAll(companyId: string): Promise<AiConfig[]> {
+    return this.repo.find({ 
+      where: { companyId },
+      order: { createdAt: 'DESC' } 
+    });
   }
 
-  async findById(id: string): Promise<AiConfig | null> {
+  async findById(id: string, companyId: string): Promise<AiConfig | null> {
     if (!isValidUuid(id)) return null;
-    return this.repo.findOneBy({ id });
+    return this.repo.findOneBy({ id, companyId });
   }
 
-  async findActive(companyId?: string): Promise<AiConfig | null> {
-    if (companyId) {
-      // 1. Tenta buscar a IA ativa da empresa específica
-      const companyActive = await this.repo.findOneBy({ active: true, companyId });
-      if (companyActive) return companyActive;
-    }
-
-    // 2. Se não houver da empresa (ou não informada), busca a global (companyId nulo)
-    return this.repo.findOneBy({ active: true, companyId: IsNull() });
+  async findActive(companyId: string): Promise<AiConfig | null> {
+    return this.repo.findOneBy({ active: true, companyId });
   }
 
   async save(data: Partial<AiConfig>): Promise<AiConfig> {
@@ -80,23 +76,23 @@ export class AiConfigService {
     return savedEntity;
   }
 
-  async activate(id: string): Promise<AiConfig> {
+  async activate(id: string, companyId: string): Promise<AiConfig> {
     if (!isValidUuid(id)) throw new BadRequestException('ID inválido');
-    await this.repo.update({ active: true }, { active: false });
-    await this.repo.update(id, { active: true });
-    return this.repo.findOneBy({ id });
+    await this.repo.update({ active: true, companyId }, { active: false });
+    await this.repo.update({ id, companyId }, { active: true });
+    return this.repo.findOneBy({ id, companyId });
   }
 
-  async deactivate(id: string): Promise<AiConfig> {
+  async deactivate(id: string, companyId: string): Promise<AiConfig> {
     if (!isValidUuid(id)) throw new BadRequestException('ID inválido');
-    await this.repo.update(id, { active: false });
-    return this.repo.findOneBy({ id });
+    await this.repo.update({ id, companyId }, { active: false });
+    return this.repo.findOneBy({ id, companyId });
   }
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, companyId: string): Promise<void> {
     if (!isValidUuid(id)) throw new BadRequestException('ID inválido');
-    const result = await this.repo.delete(id);
-    this.logger.log(`🗑️ IA deletada com id ${id} (affected: ${result.affected})`);
+    const result = await this.repo.delete({ id, companyId });
+    this.logger.log(`🗑️ IA deletada com id ${id} na empresa ${companyId} (affected: ${result.affected})`);
   }
 
   async testChat(id: string, body: { message: string; history: any[]; stage: string }) {

@@ -12,23 +12,14 @@ export class ContactsService {
   ) {}
 
   findAll(companyId: string) {
-    const finalCompanyId = companyId || 'default-company';
-    const where: any[] = [{ companyId: finalCompanyId }];
-    
-    // Se for a empresa padrão, também mostra órfãos (para retrocompatibilidade)
-    if (finalCompanyId === 'default-company') {
-      where.push({ companyId: IsNull() });
-      where.push({ companyId: '' });
-    }
-
     return this.repo.find({ 
-      where,
+      where: { companyId },
       order: { updatedAt: 'DESC' } 
     });
   }
 
-  findOne(id: string) {
-    return this.repo.findOneBy({ id });
+  findOne(id: string, companyId: string) {
+    return this.repo.findOneBy({ id, companyId });
   }
 
   create(data: Partial<Contact>) {
@@ -42,12 +33,16 @@ export class ContactsService {
     return this.repo.save(contact);
   }
 
-  async update(id: string, data: Partial<Contact>) {
+  async update(id: string, data: Partial<Contact>, companyId: string) {
     if (data.phone) {
       data.phone = this.normalizePhone(data.phone);
     }
-    await this.repo.update(id, data);
-    return this.findOne(id);
+    // Garante que o contato pertence à empresa antes de atualizar
+    const contact = await this.findOne(id, companyId);
+    if (!contact) return null;
+
+    await this.repo.update({ id, companyId }, data);
+    return this.findOne(id, companyId);
   }
 
   // Retorna apenas contatos com mensagens, incluindo prévia da última mensagem
@@ -75,10 +70,10 @@ export class ContactsService {
         (SELECT created_at FROM messages WHERE contact_id = c.id ORDER BY created_at DESC LIMIT 1) AS "lastMessageAt",
         (SELECT COUNT(*) FROM messages WHERE contact_id = c.id AND status != 'read' AND sender = 'lead') AS "unreadCount"
       FROM contacts c
-      WHERE (c.company_id = $1 OR (c.company_id IS NULL AND $1 = 'default-company') OR (c.company_id = '' AND $1 = 'default-company'))
+      WHERE c.company_id = $1
       AND EXISTS (SELECT 1 FROM messages WHERE contact_id = c.id)
       ORDER BY (SELECT created_at FROM messages WHERE contact_id = c.id ORDER BY created_at DESC LIMIT 1) DESC NULLS LAST
-    `, [finalCompanyId]);
+    `, [companyId]);
 
     return result.map((r: any) => ({
       ...r,
@@ -100,8 +95,8 @@ export class ContactsService {
         COUNT(*) FILTER (WHERE stage = 'ganho') AS "totalConverted",
         COUNT(*) FILTER (WHERE stage = 'perdido') AS "totalLost"
       FROM contacts
-      WHERE (company_id = $1 OR (company_id IS NULL AND $1 = 'default-company') OR (company_id = '' AND $1 = 'default-company'))
-    `, [finalCompanyId]);
+      WHERE company_id = $1
+    `, [companyId]);
 
     // Conversas e IA (Inbox)
     const convMetrics = await this.repo.query(`
@@ -111,8 +106,8 @@ export class ContactsService {
         COUNT(*) FILTER (WHERE current_stage = 'atendimento_humano' OR waiting_human_reply = true) AS "totalHuman",
         COUNT(*) FILTER (WHERE handoff_at IS NOT NULL) AS "aiHandoffs"
       FROM conversations
-      WHERE (company_id = $1 OR (company_id IS NULL AND $1 = 'default-company') OR (company_id = '' AND $1 = 'default-company'))
-    `, [finalCompanyId]);
+      WHERE company_id = $1
+    `, [companyId]);
 
     const m = contactsMetrics[0];
     const c = convMetrics[0];
@@ -207,13 +202,10 @@ export class ContactsService {
       .map(r => this.normalizePhone(r[phoneField]))
       .filter(p => p.length >= 10);
 
-    // 3. Buscar contatos existentes: da empresa atual OU órfãos (para recuperação)
+    // 3. Buscar contatos existentes: apenas da empresa atual
     const existingContacts = await this.repo.find({
       where: [
-        { companyId: config.companyId, phone: In(normalizedPhones) },
-        { companyId: IsNull(), phone: In(normalizedPhones) },
-        { companyId: '', phone: In(normalizedPhones) },
-        { companyId: 'undefined', phone: In(normalizedPhones) }
+        { companyId: config.companyId, phone: In(normalizedPhones) }
       ]
     });
 
@@ -361,11 +353,11 @@ export class ContactsService {
       console.log(`  - ID: ${t.id} | Nome: ${t.name} | Phone: ${t.phone} | DB_Company: ${t.companyId}`);
     });
  
-    // Exclusão robusta: tenta deletar pelo ID + companyId OU ID + NULL (retrocompatibilidade)
+    // Exclusão robusta: apenas pelo ID + companyId
     const result = await this.repo.createQueryBuilder()
       .delete()
       .where("id IN (:...ids)", { ids })
-      .andWhere("(company_id = :companyId OR company_id IS NULL)", { companyId: finalCompanyId })
+      .andWhere("company_id = :companyId", { companyId: finalCompanyId })
       .execute();
     
     // Contagem por empresa depois

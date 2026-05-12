@@ -10,27 +10,27 @@ export class MessagesService {
     private readonly repo: Repository<Message>,
   ) {}
 
-  async findByContact(contactId: string, limit = 50): Promise<Message[]> {
+  async findByContact(contactId: string, companyId: string, limit = 50): Promise<Message[]> {
     const msgs = await this.repo.find({
-      where: { contactId },
+      where: { contactId, companyId },
       order: { createdAt: 'DESC' },
       take: limit,
     });
     return msgs.reverse();
   }
 
-  async findByConversation(conversationId: string, limit = 50): Promise<Message[]> {
+  async findByConversation(conversationId: string, companyId: string, limit = 50): Promise<Message[]> {
     const msgs = await this.repo.find({
-      where: { conversationId },
+      where: { conversationId, companyId },
       order: { createdAt: 'DESC' },
       take: limit,
     });
     return msgs.reverse();
   }
 
-  async markAsRead(contactId: string): Promise<void> {
+  async markAsRead(contactId: string, companyId: string): Promise<void> {
     await this.repo.update(
-      { contactId, sender: 'lead', status: 'sent' } as any,
+      { contactId, companyId, sender: 'lead', status: 'sent' } as any,
       { status: 'read' },
     );
   }

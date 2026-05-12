@@ -1,13 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body, UseGuards, UseInterceptors, UploadedFile, Req, BadRequestException } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
-import { CampaignsService } from './campaigns.service';
-import { JwtAuthGuard } from '../auth/auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
-import { UserRole } from '../users/entities/user.entity';
+import { TenantHelper } from '../common/utils/tenant.utils';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN, UserRole.MANAGER)
@@ -15,19 +6,23 @@ import { UserRole } from '../users/entities/user.entity';
 export class CampaignsController {
   constructor(private readonly svc: CampaignsService) {}
 
+  private getCompanyId(req: any): string {
+    return TenantHelper.getCompanyIdOrThrow(req.user);
+  }
+
   @Get()
   findAll(@Req() req) {
-    return this.svc.findAll(req.user.companyId);
+    return this.svc.findAll(this.getCompanyId(req));
   }
 
   @Get(':id')
-  findById(@Param('id') id: string) {
-    return this.svc.findById(id);
+  findById(@Req() req, @Param('id') id: string) {
+    return this.svc.findById(id, this.getCompanyId(req));
   }
 
   @Get(':id/recipients')
-  findRecipients(@Param('id') id: string) {
-    return this.svc.findRecipients(id);
+  findRecipients(@Req() req, @Param('id') id: string) {
+    return this.svc.findRecipients(id, this.getCompanyId(req));
   }
 
   @Post()
@@ -36,20 +31,20 @@ export class CampaignsController {
   }
 
   @Patch(':id/start')
-  start(@Param('id') id: string) {
-    return this.svc.start(id);
+  start(@Req() req, @Param('id') id: string) {
+    return this.svc.start(id, this.getCompanyId(req));
   }
 
   @Patch(':id/pause')
-  pause(@Param('id') id: string) {
-    return this.svc.pause(id);
+  pause(@Req() req, @Param('id') id: string) {
+    return this.svc.pause(id, this.getCompanyId(req));
   }
 
   @Post('upload-media')
   @UseInterceptors(FileInterceptor('file', {
     storage: diskStorage({
       destination: (req: any, file, cb) => {
-        const companyId = req.user?.companyId || 'default-company';
+        const companyId = TenantHelper.getCompanyIdOrThrow(req.user);
         const uploadPath = join(process.cwd(), 'uploads', 'campaigns', String(companyId));
         if (!existsSync(uploadPath)) {
           mkdirSync(uploadPath, { recursive: true });
@@ -84,7 +79,7 @@ export class CampaignsController {
     // Constrói a URL acessível
     const protocol = req.protocol;
     const host = req.get('host');
-    const companyId = req.user?.companyId || 'default-company';
+    const companyId = this.getCompanyId(req);
     const mediaUrl = `${protocol}://${host}/uploads/campaigns/${companyId}/${file.filename}`;
 
     console.log(`[CampaignsController] Arquivo salvo em: ${file.path}`);

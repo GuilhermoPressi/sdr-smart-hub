@@ -11,8 +11,9 @@ export class UsersService {
     private usersRepository: Repository<User>,
   ) {}
 
-  async countAll(): Promise<number> {
-    return this.usersRepository.count();
+  async countAll(companyId?: string): Promise<number> {
+    const where = companyId ? { companyId } : {};
+    return this.usersRepository.count({ where });
   }
 
   async create(data: Partial<User>): Promise<Omit<User, 'passwordHash'>> {
@@ -31,8 +32,9 @@ export class UsersService {
     return result as any;
   }
 
-  async findAll(): Promise<Omit<User, 'passwordHash'>[]> {
+  async findAll(companyId: string): Promise<Omit<User, 'passwordHash'>[]> {
     const users = await this.usersRepository.find({
+      where: { companyId },
       order: { createdAt: 'DESC' }
     });
     return users.map(u => {
@@ -41,18 +43,23 @@ export class UsersService {
     });
   }
 
-  async findOne(id: string): Promise<User> {
-    const user = await this.usersRepository.findOne({ where: { id } });
+  async findOne(id: string, companyId?: string): Promise<User> {
+    const where: any = { id };
+    if (companyId) where.companyId = companyId;
+
+    const user = await this.usersRepository.findOne({ where });
     if (!user) throw new NotFoundException('Usuário não encontrado');
     return user;
   }
 
-  async findByEmail(email: string): Promise<User | null> {
-    return this.usersRepository.findOne({ where: { email } });
+  async findByEmail(email: string, companyId?: string): Promise<User | null> {
+    const where: any = { email };
+    if (companyId) where.companyId = companyId;
+    return this.usersRepository.findOne({ where });
   }
 
-  async update(id: string, data: Partial<User>): Promise<Omit<User, 'passwordHash'>> {
-    const user = await this.findOne(id);
+  async update(id: string, data: Partial<User>, companyId: string): Promise<Omit<User, 'passwordHash'>> {
+    const user = await this.findOne(id, companyId);
     
     if (data.passwordHash) {
       data.passwordHash = PasswordUtil.hashPassword(data.passwordHash);
@@ -64,8 +71,8 @@ export class UsersService {
     return result as any;
   }
 
-  async deactivate(id: string): Promise<Omit<User, 'passwordHash'>> {
-    const user = await this.findOne(id);
+  async deactivate(id: string, companyId: string): Promise<Omit<User, 'passwordHash'>> {
+    const user = await this.findOne(id, companyId);
     user.active = !user.active; // toggle
     const saved = await this.usersRepository.save(user);
     const { passwordHash, ...result } = saved;

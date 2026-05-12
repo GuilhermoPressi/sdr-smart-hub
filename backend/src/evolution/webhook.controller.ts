@@ -179,6 +179,7 @@ export class WebhookController {
     await this.messagesSvc.create({
       contactId: contact.id,
       conversationId: conversation.id,
+      companyId,
       text,
       sender: 'lead',
       instanceName,
@@ -189,11 +190,11 @@ export class WebhookController {
     await this.convSvc.update(conversation.id, {
       lastMessageAt: new Date(),
       status: 'open',
-    });
+    }, companyId);
     await this.convSvc.incrementUnread(conversation.id);
     
     // Reload para estado atualizado
-    conversation = await this.convSvc.update(conversation.id, {});
+    conversation = await this.convSvc.update(conversation.id, {}, companyId);
 
     // ── 2. Check blocked stages/statuses ─────────────────────────────────
     const blockedStages = ['atendimento_humano', 'ganho', 'perdido', 'finalizado'];
@@ -233,6 +234,7 @@ export class WebhookController {
           await this.messagesSvc.create({
             contactId: contact.id,
             conversationId: conversation.id,
+            companyId,
             text: handoffMsg,
             sender: 'ia',
             instanceName,
@@ -245,9 +247,9 @@ export class WebhookController {
             waitingHumanReply: true,
             handoffReason: matched,
             handoffAt: new Date(),
-          });
+          }, companyId);
 
-          await this.contactRepo.update(contact.id, { stage: 'atendimento_humano' });
+          await this.contactRepo.update({ id: contact.id, companyId }, { stage: 'atendimento_humano' });
           return { received: true, transferred: true, keyword: matched };
         }
       }

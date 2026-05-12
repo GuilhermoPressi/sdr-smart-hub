@@ -1,10 +1,5 @@
-import { Controller, Get, Post, Put, Patch, Delete, Body, Param, UseGuards } from '@nestjs/common';
-import { AiConfigService } from './ai-config.service';
-import { AiConfig } from './entities/ai-config.entity';
-import { JwtAuthGuard } from '../auth/auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
-import { UserRole } from '../users/entities/user.entity';
+import { Req } from '@nestjs/common';
+import { TenantHelper } from '../common/utils/tenant.utils';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
@@ -12,48 +7,49 @@ import { UserRole } from '../users/entities/user.entity';
 export class AiConfigController {
   constructor(private readonly svc: AiConfigService) {}
 
+  private getCompanyId(req: any): string {
+    return TenantHelper.getCompanyIdOrThrow(req.user);
+  }
+
   @Get()
-  findAll(): Promise<AiConfig[]> {
-    return this.svc.findAll();
+  findAll(@Req() req): Promise<AiConfig[]> {
+    return this.svc.findAll(this.getCompanyId(req));
   }
 
   @Get('active')
-  findActive(): Promise<AiConfig | null> {
-    return this.svc.findActive();
+  findActive(@Req() req): Promise<AiConfig | null> {
+    return this.svc.findActive(this.getCompanyId(req));
   }
 
   @Get(':id')
-  findById(@Param('id') id: string): Promise<AiConfig | null> {
-    return this.svc.findById(id);
+  findById(@Req() req, @Param('id') id: string): Promise<AiConfig | null> {
+    return this.svc.findById(id, this.getCompanyId(req));
   }
 
   @Post()
-  create(@Body() body: Partial<AiConfig>): Promise<AiConfig> {
-    return this.svc.save(body);
+  create(@Req() req, @Body() body: Partial<AiConfig>): Promise<AiConfig> {
+    return this.svc.save({ ...body, companyId: this.getCompanyId(req) });
   }
 
   @Put(':id')
-  async update(@Param('id') id: string, @Body() body: Partial<AiConfig>): Promise<AiConfig> {
-    console.log(`[AiConfigController] PUT /:id -> recebido id: ${id}`);
-    console.log(`[AiConfigController] Payload completo recebido:`, JSON.stringify(body, null, 2));
-    const result = await this.svc.save({ ...body, id });
-    console.log(`[AiConfigController] Resultado retornado pelo svc.save:`, JSON.stringify(result, null, 2));
-    return result;
+  async update(@Req() req, @Param('id') id: string, @Body() body: Partial<AiConfig>): Promise<AiConfig> {
+    const companyId = this.getCompanyId(req);
+    return this.svc.save({ ...body, id, companyId });
   }
 
   @Patch(':id/activate')
-  activate(@Param('id') id: string): Promise<AiConfig> {
-    return this.svc.activate(id);
+  activate(@Req() req, @Param('id') id: string): Promise<AiConfig> {
+    return this.svc.activate(id, this.getCompanyId(req));
   }
 
   @Patch(':id/deactivate')
-  deactivate(@Param('id') id: string): Promise<AiConfig> {
-    return this.svc.deactivate(id);
+  deactivate(@Req() req, @Param('id') id: string): Promise<AiConfig> {
+    return this.svc.deactivate(id, this.getCompanyId(req));
   }
 
   @Delete(':id')
-  async delete(@Param('id') id: string) {
-    await this.svc.delete(id);
+  async delete(@Req() req, @Param('id') id: string) {
+    await this.svc.delete(id, this.getCompanyId(req));
     return { success: true, deletedId: id };
   }
 

@@ -44,11 +44,15 @@ export class CampaignsService implements OnModuleInit {
     });
   }
 
-  async findById(id: string): Promise<Campaign | null> {
-    return this.campaignRepo.findOneBy({ id });
+  async findById(id: string, companyId: string): Promise<Campaign | null> {
+    return this.campaignRepo.findOneBy({ id, companyId });
   }
 
-  async findRecipients(campaignId: string): Promise<CampaignRecipient[]> {
+  async findRecipients(campaignId: string, companyId: string): Promise<CampaignRecipient[]> {
+    // Primeiro garante que a campanha pertence à empresa
+    const campaign = await this.findById(campaignId, companyId);
+    if (!campaign) throw new BadRequestException('Campanha não encontrada para esta empresa');
+
     return this.recipientRepo.find({
       where: { campaignId },
       order: { createdAt: 'ASC' },
@@ -65,8 +69,8 @@ export class CampaignsService implements OnModuleInit {
     }
     if (!dto.recipients || dto.recipients.length === 0) throw new BadRequestException('Nenhum destinatário');
 
-    const companyId = user?.companyId || 'default-company';
-    const userId = user?.sub || user?.id;
+    const companyId = user.companyId;
+    const userId = user.sub || user.id;
 
     // Tentar selecionar uma instância automática se não informada
     let instanceName = dto.instanceName;
@@ -123,13 +127,13 @@ export class CampaignsService implements OnModuleInit {
     return saved;
   }
 
-  async start(id: string): Promise<Campaign> {
-    const campaign = await this.campaignRepo.findOneBy({ id });
+  async start(id: string, companyId: string): Promise<Campaign> {
+    const campaign = await this.findById(id, companyId);
     if (!campaign) throw new BadRequestException('Campanha não encontrada');
     if (campaign.status === 'sending') throw new BadRequestException('Campanha já está em andamento');
 
-    await this.campaignRepo.update(id, { status: 'sending' });
-    this.logger.log(`🚀 Disparo iniciado: "${campaign.name}"`);
+    await this.campaignRepo.update({ id, companyId }, { status: 'sending' });
+    this.logger.log(`🚀 Disparo iniciado: "${campaign.name}" (Empresa: ${companyId})`);
 
     // Start async processing — don't await
     this.processAsync(id).catch(err => {
@@ -139,10 +143,10 @@ export class CampaignsService implements OnModuleInit {
     return { ...campaign, status: 'sending' };
   }
 
-  async pause(id: string): Promise<Campaign> {
-    await this.campaignRepo.update(id, { status: 'paused' });
-    this.logger.log(`⏸️ Campanha pausada: ${id}`);
-    return this.campaignRepo.findOneBy({ id });
+  async pause(id: string, companyId: string): Promise<Campaign> {
+    await this.campaignRepo.update({ id, companyId }, { status: 'paused' });
+    this.logger.log(`⏸️ Campanha pausada: ${id} (Empresa: ${companyId})`);
+    return this.findById(id, companyId);
   }
 
   async onModuleInit() {
