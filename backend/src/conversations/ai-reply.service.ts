@@ -88,7 +88,7 @@ export class AiReplyService implements OnModuleInit {
       const contact = await this.contactRepo.findOneBy({ id: conv.contactId });
       if (!contact) return;
 
-      const aiConfig = await this.aiConfigSvc.findActive(conv.companyId);
+      const aiConfig = await this.aiConfigSvc.findActive();
       if (!aiConfig) {
         this.logger.warn(`⚠️ IA ignorada: Nenhuma configuração ativa para empresa ${conv.companyId}`);
         return;

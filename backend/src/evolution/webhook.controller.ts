@@ -209,7 +209,7 @@ export class WebhookController {
     }
 
     // ── 3. Get AI config ─────────────────────────────────────────────────
-    const aiConfig = await this.aiConfigSvc.findActive(companyId);
+    const aiConfig = await this.aiConfigSvc.findActive();
     if (!aiConfig) {
       this.logger.warn(`⚠️ [${instanceName}] IA ignorada: Nenhuma configuração ativa para empresa ${companyId}.`);
       return { received: true, noConfig: true };
