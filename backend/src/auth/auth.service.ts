@@ -129,7 +129,7 @@ export class AuthService implements OnModuleInit {
         const gestor = await this.usersService.findByEmail(gestorEmail);
         if (!gestor) {
           this.logger.log(`[AuthService] Criando gestor para Empresa B: ${gestorEmail}`);
-          await this.usersService.create({
+          const newUser = await this.usersService.create({
             name: 'Gestor B',
             email: gestorEmail,
             passwordHash: 'admin123',
@@ -137,12 +137,15 @@ export class AuthService implements OnModuleInit {
             active: true,
             companyId: tenantBId
           });
+          this.logger.log(`[AuthService] Usuário gestor@empresa-b.com criado com ID ${newUser.id} na Empresa B (${tenantBId})`);
         } else {
           // Reset password anyway to ensure it's admin123 and matches the correct company
-          this.logger.log(`[AuthService] Resetando senha e empresa do gestor B: ${gestorEmail}`);
+          this.logger.log(`[AuthService] Usuário ${gestorEmail} já existe. Resetando senha e empresa.`);
           await this.usersService.resetPassword(gestorEmail, 'admin123');
           await this.dataSource.query(`UPDATE users SET company_id = $1::uuid, active = true WHERE email = $2`, [tenantBId, gestorEmail]);
         }
+      } else {
+        this.logger.error(`[AuthService] ERRO: Não foi possível encontrar/criar o ID da Empresa B`);
       }
 
       this.logger.log('--- [AuthService] REPARO DE DADOS CONCLUÍDO ---');
@@ -161,13 +164,14 @@ export class AuthService implements OnModuleInit {
         role: UserRole.ADMIN,
         active: true,
       });
-      console.log('Primeiro admin criado: admin@leadflow.com / admin123');
+      this.logger.log('Primeiro admin criado: admin@leadflow.com / admin123');
     }
   }
 
   async login(email: string, pass: string) {
-    this.logger.log(`[LOGIN] Tentativa para: ${email}`);
-    const user = await this.usersService.findByEmail(email);
+    const normalizedEmail = (email || '').trim().toLowerCase();
+    this.logger.log(`[LOGIN] Tentativa para: ${normalizedEmail}`);
+    const user = await this.usersService.findByEmail(normalizedEmail);
     
     if (!user) {
       this.logger.warn(`[LOGIN] Usuário não encontrado: ${email}`);

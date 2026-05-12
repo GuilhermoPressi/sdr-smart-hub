@@ -53,7 +53,8 @@ export class UsersService {
   }
 
   async findByEmail(email: string, companyId?: string): Promise<User | null> {
-    const where: any = { email };
+    const normalizedEmail = (email || '').trim().toLowerCase();
+    const where: any = { email: normalizedEmail };
     if (companyId) where.companyId = companyId;
     return this.usersRepository.findOne({ where });
   }
