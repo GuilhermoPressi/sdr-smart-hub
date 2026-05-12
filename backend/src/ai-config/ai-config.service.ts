@@ -95,8 +95,8 @@ export class AiConfigService {
     this.logger.log(`🗑️ IA deletada com id ${id} na empresa ${companyId} (affected: ${result.affected})`);
   }
 
-  async testChat(id: string, body: { message: string; history: any[]; stage: string }) {
-    const config = await this.findById(id);
+  async testChat(id: string, companyId: string, body: { message: string; history: any[]; stage: string }) {
+    const config = await this.findById(id, companyId);
     if (!config) throw new NotFoundException('IA não encontrada');
 
     this.logger.log(`[TESTE DE IA] Iniciado para IA ${config.displayName || config.internalName}`);

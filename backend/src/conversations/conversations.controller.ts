@@ -1,3 +1,6 @@
+import { Controller, Get, Patch, Body, Param, Req, UseGuards } from '@nestjs/common';
+import { ConversationsService } from './conversations.service';
+import { JwtAuthGuard } from '../auth/auth.guard';
 import { TenantHelper } from '../common/utils/tenant.utils';
 
 @UseGuards(JwtAuthGuard)

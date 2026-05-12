@@ -124,7 +124,7 @@ export class AiReplyService implements OnModuleInit {
         const suggested = aiPayload.suggestedNextStage;
         const validStep = aiConfig.conversationFlow?.find(s => s.id === suggested);
         if (validStep && suggested !== conv.currentStage) {
-          await this.convSvc.update(conv.id, { currentStage: suggested });
+          await this.convSvc.update(conv.id, { currentStage: suggested }, conv.companyId);
           conv.currentStage = suggested;
         }
       }

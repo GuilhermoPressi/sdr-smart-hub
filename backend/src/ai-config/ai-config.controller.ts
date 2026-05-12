@@ -1,4 +1,10 @@
-import { Req } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Req, UseGuards } from '@nestjs/common';
+import { AiConfigService } from './ai-config.service';
+import { AiConfig } from './entities/ai-config.entity';
+import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
 import { TenantHelper } from '../common/utils/tenant.utils';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -55,9 +61,10 @@ export class AiConfigController {
 
   @Post(':id/test-chat')
   async testChat(
+    @Req() req,
     @Param('id') id: string,
     @Body() body: { message: string; history: any[]; stage: string },
   ) {
-    return this.svc.testChat(id, body);
+    return this.svc.testChat(id, this.getCompanyId(req), body);
   }
 }

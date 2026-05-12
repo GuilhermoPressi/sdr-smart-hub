@@ -1,3 +1,13 @@
+import { Controller, Get, Post, Patch, Body, Param, Req, UseGuards, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { join, extname } from 'path';
+import { existsSync, mkdirSync } from 'fs';
+import { CampaignsService } from './campaigns.service';
+import { JwtAuthGuard } from '../auth/auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
 import { TenantHelper } from '../common/utils/tenant.utils';
 
 @UseGuards(JwtAuthGuard, RolesGuard)

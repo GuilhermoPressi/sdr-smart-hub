@@ -47,8 +47,8 @@ export class ConversationsService {
     return this.repo.findOneBy({ id, companyId });
   }
 
-  async incrementUnread(id: string) {
-    await this.repo.increment({ id }, 'unreadCount', 1);
+  async incrementUnread(id: string, companyId: string) {
+    await this.repo.increment({ id, companyId }, 'unreadCount', 1);
   }
 
   async findPendingReplies(now: Date = new Date()) {

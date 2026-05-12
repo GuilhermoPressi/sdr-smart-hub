@@ -1,4 +1,6 @@
-import { Req } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { MessagesService } from './messages.service';
+import { JwtAuthGuard } from '../auth/auth.guard';
 import { TenantHelper } from '../common/utils/tenant.utils';
 
 @UseGuards(JwtAuthGuard)

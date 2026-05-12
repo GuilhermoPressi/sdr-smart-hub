@@ -191,7 +191,7 @@ export class WebhookController {
       lastMessageAt: new Date(),
       status: 'open',
     }, companyId);
-    await this.convSvc.incrementUnread(conversation.id);
+    await this.convSvc.incrementUnread(conversation.id, companyId);
     
     // Reload para estado atualizado
     conversation = await this.convSvc.update(conversation.id, {}, companyId);
