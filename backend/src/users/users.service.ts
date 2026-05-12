@@ -78,4 +78,12 @@ export class UsersService {
     const { passwordHash, ...result } = saved;
     return result as any;
   }
+
+  async resetPassword(email: string, newPassword: string): Promise<void> {
+    const user = await this.findByEmail(email);
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+    
+    user.passwordHash = PasswordUtil.hashPassword(newPassword);
+    await this.usersRepository.save(user);
+  }
 }

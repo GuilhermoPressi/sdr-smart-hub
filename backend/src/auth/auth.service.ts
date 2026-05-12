@@ -111,6 +111,40 @@ export class AuthService implements OnModuleInit {
         }
       }
       
+      // 4. Garantir Empresa B para testes (Tenant B)
+      const tenantBName = 'Empresa B';
+      const tenantBSlug = 'empresa-b';
+      
+      await this.dataSource.query(`
+        INSERT INTO companies (id, name, slug, active, created_at, updated_at)
+        VALUES (gen_random_uuid(), $1, $2, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (slug) DO NOTHING
+      `, [tenantBName, tenantBSlug]);
+
+      const companiesB = await this.dataSource.query(`SELECT id FROM companies WHERE slug = $1 LIMIT 1`, [tenantBSlug]);
+      const tenantBId = companiesB[0]?.id;
+
+      if (tenantBId) {
+        const gestorEmail = 'gestor@empresa-b.com';
+        const gestor = await this.usersService.findByEmail(gestorEmail);
+        if (!gestor) {
+          this.logger.log(`[AuthService] Criando gestor para Empresa B: ${gestorEmail}`);
+          await this.usersService.create({
+            name: 'Gestor B',
+            email: gestorEmail,
+            passwordHash: 'admin123',
+            role: UserRole.ADMIN,
+            active: true,
+            companyId: tenantBId
+          });
+        } else {
+          // Reset password anyway to ensure it's admin123 and matches the correct company
+          this.logger.log(`[AuthService] Resetando senha e empresa do gestor B: ${gestorEmail}`);
+          await this.usersService.resetPassword(gestorEmail, 'admin123');
+          await this.dataSource.query(`UPDATE users SET company_id = $1::uuid, active = true WHERE email = $2`, [tenantBId, gestorEmail]);
+        }
+      }
+
       this.logger.log('--- [AuthService] REPARO DE DADOS CONCLUÍDO ---');
     } catch (err) {
       this.logger.error(`[AuthService] FALHA GLOBAL NO REPARO: ${err.message}`);
@@ -132,16 +166,31 @@ export class AuthService implements OnModuleInit {
   }
 
   async login(email: string, pass: string) {
+    this.logger.log(`[LOGIN] Tentativa para: ${email}`);
     const user = await this.usersService.findByEmail(email);
+    
     if (!user) {
+      this.logger.warn(`[LOGIN] Usuário não encontrado: ${email}`);
       throw new UnauthorizedException('Credenciais inválidas');
     }
+
+    this.logger.log(`[LOGIN] Usuário encontrado: ${user.email} | Active: ${user.active} | Role: ${user.role} | CompanyId: ${user.companyId}`);
+
     if (!user.active) {
+      this.logger.warn(`[LOGIN] Usuário inativo: ${email}`);
       throw new UnauthorizedException('Usuário inativo');
     }
     
-    if (!PasswordUtil.verifyPassword(pass, user.passwordHash)) {
+    const isPasswordValid = PasswordUtil.verifyPassword(pass, user.passwordHash);
+    this.logger.log(`[LOGIN] Resultado senha: ${isPasswordValid ? 'OK' : 'FALHA'}`);
+
+    if (!isPasswordValid) {
       throw new UnauthorizedException('Credenciais inválidas');
+    }
+
+    if (!user.companyId) {
+      this.logger.error(`[LOGIN] Usuário SEM companyId: ${email}`);
+      throw new UnauthorizedException('Usuário sem empresa vinculada');
     }
 
     const payload = { 
