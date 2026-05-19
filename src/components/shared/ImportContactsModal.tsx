@@ -119,10 +119,13 @@ export function ImportContactsModal({ open, onOpenChange, onComplete }: ImportCo
   };
 
   const handleStartImport = async () => {
-    if (!file) return;
+    if (!file) {
+      toast.error("Nenhum arquivo selecionado.");
+      return;
+    }
     
     // Check required mappings
-    const phoneMapped = Object.entries(mapping).find(([sys, csv]) => sys === 'phone' && csv);
+    const phoneMapped = Object.entries(mapping).find(([sys]) => sys === 'phone' && mapping['phone']);
     if (!phoneMapped) {
       toast.error("O campo 'Telefone' é obrigatório para a importação.");
       return;
@@ -141,8 +144,10 @@ export function ImportContactsModal({ open, onOpenChange, onComplete }: ImportCo
       setResults(res);
       toast.success("Importação concluída!");
     } catch (error: any) {
+      console.error('[Import] Erro na importação:', error);
       toast.error(error.message || "Erro ao importar contatos");
-      setStep(3);
+      setResults(null);
+      // Mantemos no step 4 para mostrar a tela de erro, não volta para step 3 (black screen)
     } finally {
       setIsUploading(false);
     }

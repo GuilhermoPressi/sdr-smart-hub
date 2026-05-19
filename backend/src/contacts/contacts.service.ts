@@ -307,10 +307,30 @@ export class ContactsService {
     if (!phone) return '';
     const str = String(phone);
     let digits = str.replace(/\D/g, '');
+    if (!digits) return '';
+
+    // Remove leading zero
     if (digits.startsWith('0')) digits = digits.slice(1);
+
+    // Detecta duplicação: número colado duas vezes (ex: "5511999995555511999995555")
+    // Isso acontece quando o Excel salva o valor formatado e o CSV repete
+    const halfLen = Math.floor(digits.length / 2);
+    if (digits.length >= 20 && digits.length % 2 === 0) {
+      const firstHalf = digits.slice(0, halfLen);
+      const secondHalf = digits.slice(halfLen);
+      if (firstHalf === secondHalf) {
+        digits = firstHalf;
+      }
+    }
+
+    // Add country code for Brazilian numbers
     if (digits.length >= 10 && digits.length <= 11 && !digits.startsWith('55')) {
       digits = '55' + digits;
     }
+
+    // Rejeitar se após normalização ainda for muito longo (> 15 dígitos = inválido)
+    if (digits.length > 15) return '';
+
     return digits;
   }
 
