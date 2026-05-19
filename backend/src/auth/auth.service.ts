@@ -102,39 +102,16 @@ export class AuthService implements OnModuleInit {
       
       // 4. Migração de Mensagens para Conversas (Antigo Step 3)
       try {
-        await this.dataSource.query(`
-          UPDATE messages m
-          SET company_id = c.company_id
-          FROM contacts c
-          WHERE m.contact_id = c.id AND (m.company_id IS NULL OR m.company_id::text = '')
-        `);
-
-        const orphanGroups = await this.dataSource.query(`
-          SELECT DISTINCT m.contact_id, m.instance_name, COALESCE(c.company_id, $1::uuid) as company_id
-          FROM messages m
-          JOIN contacts c ON m.contact_id = c.id
-          WHERE m.conversation_id IS NULL
-        `, [defaultCompanyId]);
-
-        if (orphanGroups.length > 0) {
-          this.logger.log(`[AuthService] Migrando ${orphanGroups.length} grupos de mensagens órfãs...`);
-          for (const group of orphanGroups) {
-            const { contact_id, instance_name, company_id } = group;
-            const convResult = await this.dataSource.query(`
-              INSERT INTO conversations (id, contact_id, company_id, instance_name, channel, status, ai_enabled, created_at, updated_at)
-              VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3, 'whatsapp', 'open', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-              ON CONFLICT (company_id, contact_id, instance_name) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
-              RETURNING id
-            `, [contact_id, company_id, instance_name]);
-            
-            const conversationId = convResult[0].id;
-            await this.dataSource.query(`
-              UPDATE messages 
-              SET conversation_id = $1::uuid 
-              WHERE contact_id = $2::uuid AND instance_name = $3 AND conversation_id IS NULL
-            `, [conversationId, contact_id, instance_name]);
-          }
-        }
+          // Ignorar a migração de conversas órfãs — já foi feita anteriormente
+          // Apenas atualizar company_id em mensagens sem empresa vinculada
+          await this.dataSource.query(`
+            UPDATE messages m
+            SET company_id = c.company_id::uuid
+            FROM contacts c
+            WHERE m.contact_id = c.id 
+              AND c.company_id IS NOT NULL
+              AND (m.company_id IS NULL OR m.company_id::text = '' OR m.company_id::text = 'undefined')
+          `);
       } catch (migErr) {
         this.logger.error(`[AuthService] Erro na migração de conversas: ${migErr.message}`);
       }

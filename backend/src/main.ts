@@ -4,7 +4,13 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    bodyParser: true,
+  });
+
+  // Aumentar limite do body para permitir operações em lote (ex: deletar milhares de IDs)
+  app.use(require('express').json({ limit: '50mb' }));
+  app.use(require('express').urlencoded({ extended: true, limit: '50mb' }));
 
   app.setGlobalPrefix('api/v1');
 
