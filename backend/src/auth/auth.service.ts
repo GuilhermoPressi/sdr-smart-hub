@@ -100,21 +100,7 @@ export class AuthService implements OnModuleInit {
         }
       }
       
-      // 4. Migração de Mensagens para Conversas (Antigo Step 3)
-      try {
-          // Ignorar a migração de conversas órfãs — já foi feita anteriormente
-          // Apenas atualizar company_id em mensagens sem empresa vinculada
-          await this.dataSource.query(`
-            UPDATE messages m
-            SET company_id = c.company_id::uuid
-            FROM contacts c
-            WHERE m.contact_id = c.id 
-              AND c.company_id IS NOT NULL
-              AND (m.company_id IS NULL OR m.company_id::text = '' OR m.company_id::text = 'undefined')
-          `);
-      } catch (migErr) {
-        this.logger.error(`[AuthService] Erro na migração de conversas: ${migErr.message}`);
-      }
+      // 4. Migração de mensagens já concluída — step removido para evitar erro de cast UUID
       
       this.logger.log('--- [AuthService] REPARO DE DADOS CONCLUÍDO ---');
     } catch (err) {

@@ -74,6 +74,9 @@ export default function Contatos() {
   const [editingContact, setEditingContact] = useState<Lead | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
+  const pageSize = 50;
+  const [page, setPage] = useState(1);
+
   const filtered = useMemo(() => {
     return leads.filter((l) => {
       if (search && !`${l.name} ${l.email} ${l.companyName}`.toLowerCase().includes(search.toLowerCase())) return false;
@@ -84,10 +87,23 @@ export default function Contatos() {
     });
   }, [leads, search, origin, tag, status]);
 
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const paginatedLeads = useMemo(() => {
+    return filtered.slice((page - 1) * pageSize, page * pageSize);
+  }, [filtered, page]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [search, origin, tag, status]);
+
   const allTags = Array.from(new Set(leads.flatMap((l) => l.tags)));
   const allOrigins = Array.from(new Set(leads.map((l) => l.origin)));
   const allStatuses = Array.from(new Set(leads.map((l) => l.status)));
   
+  // O "selecionar todos" agora pode se referir apenas à página atual ou a todos.
+  // Vamos manter "allSelected" como se TODOS os filtrados estão selecionados para o Bulk Delete, 
+  // mas o botão da tabela seleciona todos os filtrados.
   const allSelected = filtered.length > 0 && filtered.every((l) => selected.includes(l.id));
 
   const toggleAll = () => {
@@ -190,10 +206,10 @@ export default function Contatos() {
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-5">
-          <div className="glass-card rounded-2xl overflow-hidden">
+          <div className="glass-card rounded-2xl overflow-hidden flex flex-col">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-background/40 text-xs uppercase tracking-wider text-muted-foreground">
+                <thead className="bg-background/40 text-xs uppercase tracking-wider text-muted-foreground border-b border-border-subtle">
                   <tr>
                     <th className="px-4 py-3 w-10">
                       <div className="flex items-center justify-center">
@@ -207,13 +223,13 @@ export default function Contatos() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((l) => {
+                  {paginatedLeads.map((l) => {
                     const checked = selected.includes(l.id);
                     return (
                       <tr 
                         key={l.id} 
                         onClick={() => setViewingContactId(l.id)}
-                        className={cn("border-t border-border-subtle transition-colors cursor-pointer", checked ? "bg-primary/5" : "hover:bg-surface/40")}
+                        className={cn("border-b border-border-subtle transition-colors cursor-pointer last:border-0", checked ? "bg-primary/5" : "hover:bg-surface/40")}
                       >
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
@@ -249,11 +265,41 @@ export default function Contatos() {
                     );
                   })}
                   {filtered.length === 0 && (
-                    <tr><td colSpan={4} className="px-4 py-12 text-center text-sm text-muted-foreground">Nenhum contato encontrado.</td></tr>
+                    <tr><td colSpan={5} className="px-4 py-12 text-center text-sm text-muted-foreground">Nenhum contato encontrado.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="p-4 border-t border-border-subtle flex items-center justify-between bg-surface/20">
+                <p className="text-xs text-muted-foreground">
+                  Mostrando {(page - 1) * pageSize + 1} a {Math.min(page * pageSize, filtered.length)} de {filtered.length}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                  >
+                    Anterior
+                  </Button>
+                  <p className="text-sm font-medium px-2">
+                    {page} / {totalPages}
+                  </p>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                  >
+                    Próximo
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Bulk panel */}
