@@ -214,7 +214,8 @@ export class CampaignsService implements OnModuleInit {
 
       // 2. Verificar se a instância ainda está conectada antes de tentar enviar
       try {
-        const state = await this.evoSvc.getConnectionState(campaign.instanceName);
+        const stateData = await this.evoSvc.getConnectionState(campaign.instanceName);
+        const state = stateData?.instance?.state || stateData?.state || 'disconnected';
         if (state !== 'open' && state !== 'connected') {
           this.logger.error(`❌ Instância ${campaign.instanceName} desconectada (${state}). Pausando campanha.`);
           await this.campaignRepo.update(campaignId, { status: 'paused' });
