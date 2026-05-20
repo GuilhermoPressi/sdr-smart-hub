@@ -86,11 +86,11 @@ export class CampaignsController {
   uploadMedia(@Req() req, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('Nenhum arquivo enviado');
     
-    // Constrói a URL acessível
-    const protocol = req.protocol;
+    // Constrói a URL acessível (com api/v1 pois o ServeStatic herda o Global Prefix)
     const host = req.get('host');
     const companyId = this.getCompanyId(req);
-    const mediaUrl = `${protocol}://${host}/uploads/campaigns/${companyId}/${file.filename}`;
+    const protocol = req.protocol === 'http' && host.includes('api.sdr') ? 'https' : req.protocol;
+    const mediaUrl = `${protocol}://${host}/api/v1/uploads/campaigns/${companyId}/${file.filename}`;
 
     console.log(`[CampaignsController] Arquivo salvo em: ${file.path}`);
     console.log(`[CampaignsController] URL pública gerada: ${mediaUrl}`);
