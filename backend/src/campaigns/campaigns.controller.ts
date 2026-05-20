@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Req, UseGuards, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Req, Res, UseGuards, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { join, extname } from 'path';
@@ -7,6 +7,7 @@ import { CampaignsService } from './campaigns.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { Public } from '../auth/public.decorator';
 import { UserRole } from '../users/entities/user.entity';
 import { TenantHelper } from '../common/utils/tenant.utils';
 
@@ -86,11 +87,11 @@ export class CampaignsController {
   uploadMedia(@Req() req, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('Nenhum arquivo enviado');
     
-    // Constrói a URL acessível (com api/v1 pois o ServeStatic herda o Global Prefix)
+    // Constrói a URL acessível apontando para o nosso próprio endpoint
     const host = req.get('host');
     const companyId = this.getCompanyId(req);
     const protocol = req.protocol === 'http' && host.includes('api.sdr') ? 'https' : req.protocol;
-    const mediaUrl = `${protocol}://${host}/api/v1/uploads/campaigns/${companyId}/${file.filename}`;
+    const mediaUrl = `${protocol}://${host}/api/v1/campaigns/media/${companyId}/${file.filename}`;
 
     console.log(`[CampaignsController] Arquivo salvo em: ${file.path}`);
     console.log(`[CampaignsController] URL pública gerada: ${mediaUrl}`);
@@ -100,5 +101,19 @@ export class CampaignsController {
       fileName: file.originalname,
       mimeType: file.mimetype,
     };
+  }
+
+  @Public()
+  @Get('media/:companyId/:filename')
+  serveMedia(
+    @Param('companyId') companyId: string,
+    @Param('filename') filename: string,
+    @Res() res: any
+  ) {
+    const filePath = join(process.cwd(), 'uploads', 'campaigns', companyId, filename);
+    if (!existsSync(filePath)) {
+      throw new BadRequestException('Arquivo não encontrado');
+    }
+    return res.sendFile(filePath);
   }
 }
