@@ -291,20 +291,29 @@ export const useApp = create<Store>()(
     const { api } = await import("@/lib/api");
     try {
       const contacts = await api.getContacts();
-      set({ leads: (contacts || []).map((c: any) => ({
-        ...c,
-        name: c.name || c.phone || 'Desconhecido',
-        phone: c.phone || '',
-        email: c.email || '',
-        origin: c.origin || c.source || 'WhatsApp',
-        crm: c.crm || 'Pipeline Comercial',
-        temperature: c.temperature || 'Frio',
-        stage: c.stage || 'novo',
-        status: c.status || 'Novo',
-        iaStatus: c.iaStatus || 'Aguardando',
-        lastInteraction: c.lastInteraction || c.updatedAt || '',
-        tags: c.tags || [],
-      })) });
+      set({ leads: (contacts || []).map((c: any) => {
+        let parsedTags: string[] = [];
+        if (Array.isArray(c.tags)) {
+          parsedTags = c.tags;
+        } else if (typeof c.tags === 'string') {
+          parsedTags = c.tags.replace(/^{|}$/g, '').split(',').filter(Boolean).map((t: string) => t.replace(/^"|"$/g, ''));
+        }
+
+        return {
+          ...c,
+          name: c.name || c.phone || 'Desconhecido',
+          phone: c.phone || '',
+          email: c.email || '',
+          origin: c.origin || c.source || 'WhatsApp',
+          crm: c.crm || 'Pipeline Comercial',
+          temperature: c.temperature || 'Frio',
+          stage: c.stage || 'novo',
+          status: c.status || 'Novo',
+          iaStatus: c.iaStatus || 'Aguardando',
+          lastInteraction: c.lastInteraction || c.updatedAt || '',
+          tags: parsedTags,
+        };
+      }) });
     } catch (e) {
       console.error("Failed to fetch leads", e);
     }
