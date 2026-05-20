@@ -108,9 +108,9 @@ export function ImportContactsModal({ open, onOpenChange, onComplete }: ImportCo
       csvHeaders.forEach(h => {
         const lower = h.toLowerCase().trim();
         if (lower === 'nome' || lower === 'name') newMapping['name'] = h;
-        else if (['telefone', 'phone', 'whatsapp', 'celular', 'fone', 'tel'].includes(lower)) newMapping['phone'] = h;
-        else if (lower === 'email' || lower === 'e-mail') newMapping['email'] = h;
-        else if (['empresa', 'company', 'organization'].includes(lower)) newMapping['companyName'] = h;
+        else if (['telefone', 'phone', 'whatsapp', 'celular', 'fone', 'tel'].some(k => lower.includes(k))) newMapping['phone'] = h;
+        else if (lower.includes('email') || lower.includes('e-mail')) newMapping['email'] = h;
+        else if (['empresa', 'company', 'organization', 'organização'].some(k => lower.includes(k))) newMapping['companyName'] = h;
       });
       setMapping(newMapping);
       setStep(2);

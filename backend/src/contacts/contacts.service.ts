@@ -306,14 +306,28 @@ export class ContactsService {
   private normalizePhone(phone: string | any): string {
     if (!phone) return '';
     const str = String(phone);
-    let digits = str.replace(/\D/g, '');
+    
+    // Tenta extrair o primeiro número que pareça válido (com ou sem DDD, com ou sem 9)
+    // Isso resolve o problema de células com múltiplos telefones colados como: "(51) 3515-8668(51) 9801-93125"
+    const matches = str.match(/(?:55)?\s*\(?\d{2}\)?\s*9?\d{4}[\s-]*\d{4}/g);
+    let targetStr = str;
+    
+    if (matches && matches.length > 0) {
+      // Se encontrou mais de um, tenta pegar o primeiro que seja celular (tem 9 após o DDD)
+      const celular = matches.find(m => {
+        const d = m.replace(/\D/g, '');
+        return d.length === 11 || (d.length === 13 && d.startsWith('55'));
+      });
+      targetStr = celular || matches[0];
+    }
+
+    let digits = targetStr.replace(/\D/g, '');
     if (!digits) return '';
 
     // Remove leading zero
     if (digits.startsWith('0')) digits = digits.slice(1);
 
-    // Detecta duplicação: número colado duas vezes (ex: "5511999995555511999995555")
-    // Isso acontece quando o Excel salva o valor formatado e o CSV repete
+    // Detecta duplicação exata por erro de exportação
     const halfLen = Math.floor(digits.length / 2);
     if (digits.length >= 20 && digits.length % 2 === 0) {
       const firstHalf = digits.slice(0, halfLen);
@@ -328,8 +342,15 @@ export class ContactsService {
       digits = '55' + digits;
     }
 
-    // Rejeitar se após normalização ainda for muito longo (> 15 dígitos = inválido)
-    if (digits.length > 15) return '';
+    // Se ainda for muito longo e for um resquício de números colados que a regex não pegou,
+    // apenas recorta os primeiros 11 dígitos ou 13 dígitos
+    if (digits.length > 15) {
+        if (digits.startsWith('55')) {
+            digits = digits.slice(0, 13);
+        } else {
+            digits = '55' + digits.slice(0, 11);
+        }
+    }
 
     return digits;
   }
